@@ -1,0 +1,17 @@
+{
+  "name": "tillmann-reader-hci-lab",
+  "version": "2.6.0",
+  "private": true,
+  "description": "The Tillmann Games — Ground-Truth HCI, Psychomotor Fitts/We & Adaptive Reading Tutor",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --open",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}
