@@ -1,6 +1,6 @@
 // @ts-nocheck
 // TODO(typing): temporary while the original JavaScript is migrated module by module.
-import { GIT_CHECKPOINT_META } from '../app/build-info';
+import { BUILD_INFO } from '../app/build-info';
 import { TimeStampUtil } from '../util/timestamp';
 import DEFAULT_SESSION from '../data/default-session.json';
 
@@ -131,7 +131,7 @@ export class LongitudinalPersistenceEngine {
         this.safeSetItem(
           this.checkpointKey,
           JSON.stringify({
-            gitMeta: GIT_CHECKPOINT_META,
+            gitMeta: BUILD_INFO,
             committedUnixMs: ts.unixMs,
             committedIso: ts.iso,
             ...payload,
@@ -156,7 +156,7 @@ export class LongitudinalPersistenceEngine {
     try {
       const ts = TimeStampUtil.nowPacket();
       const snap = {
-        gitMeta: GIT_CHECKPOINT_META,
+        gitMeta: BUILD_INFO,
         committedUnixMs: ts.unixMs,
         committedIso: ts.iso,
         currentStepIdx: app.currentStepIdx,
@@ -178,7 +178,7 @@ export class LongitudinalPersistenceEngine {
       this.safeSetItem(this.storageKey, JSON.stringify(snap));
       const pill = document.getElementById('pillSaveStatus');
       if (pill) {
-        pill.textContent = `📌 Committed ${GIT_CHECKPOINT_META.commitHash}`;
+        pill.textContent = `📌 Committed ${BUILD_INFO.commitHash}`;
       }
       return snap;
     } catch (e) {
@@ -198,7 +198,7 @@ export class LongitudinalPersistenceEngine {
       app.l1Mode = cfg.l1Mode;
       app.syncStageUI();
       app.spawnForCurrentLevel();
-      return (snap.gitMeta && snap.gitMeta.tag) || GIT_CHECKPOINT_META.tag;
+      return (snap.gitMeta && snap.gitMeta.tag) || BUILD_INFO.tag;
     } catch (e) {
       return null;
     }

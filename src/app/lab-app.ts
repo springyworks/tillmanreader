@@ -1,6 +1,6 @@
 // @ts-nocheck
 // TODO(typing): temporary while the original JavaScript is migrated module by module.
-import { GIT_CHECKPOINT_META } from './build-info';
+import { BUILD_INFO } from './build-info';
 import { VocalTractFormantEngine } from '../audio/vocal-tract-formant-engine';
 import { RuntimeWatchdog } from '../diagnostics/runtime-watchdog';
 import { AdaptiveReadingEngine } from '../engines/adaptive-reading-engine';
@@ -11,8 +11,6 @@ import { LongitudinalPersistenceEngine } from '../engines/longitudinal-persisten
 import { SemanticMorphEngine } from '../engines/semantic-morph-engine';
 import { Signature100Engine } from '../engines/signature-100-engine';
 import { TelemetryEngine } from '../engines/telemetry-engine';
-import { SimpleZipPackager } from '../export/simple-zip-packager';
-import { VSCodeProjectScaffold } from '../export/vscode-project-scaffold';
 import { drawRoundRect } from '../render/draw-utils';
 import { TimeStampUtil } from '../util/timestamp';
 
@@ -860,27 +858,6 @@ export class LabApp {
         this.openJsonInspectorModal(true);
       });
     }
-    const btnDownloadVsCodeZip = document.getElementById('btnDownloadVsCodeZip');
-    if (btnDownloadVsCodeZip) {
-      btnDownloadVsCodeZip.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.exportVsCodeZipProject();
-      });
-    }
-    const btnDrawerZip = document.getElementById('btnDrawerZip');
-    if (btnDrawerZip) {
-      btnDrawerZip.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.exportVsCodeZipProject();
-      });
-    }
-    const btnCloudDownloadZip = document.getElementById('btnCloudDownloadZip');
-    if (btnCloudDownloadZip) {
-      btnCloudDownloadZip.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.exportVsCodeZipProject();
-      });
-    }
     const btnStandaloneExport = document.getElementById('btnStandaloneExport');
     if (btnStandaloneExport) {
       btnStandaloneExport.addEventListener('click', (e) => {
@@ -1284,7 +1261,7 @@ export class LabApp {
         this.persistence.commitCheckpoint(this);
         this.showToast(
           '📌 CHECKPOINT COMMITTED',
-          `Saved snapshot (${GIT_CHECKPOINT_META.tag}) to localStorage.`,
+          `Saved snapshot (${BUILD_INFO.tag}) to localStorage.`,
           'border-amber-400',
         );
       });
@@ -1295,7 +1272,7 @@ export class LabApp {
         const tag = this.persistence.revertToCheckpoint(this);
         this.showToast(
           '⏪ REVERTED TO CHECKPOINT',
-          `Restored ${tag || GIT_CHECKPOINT_META.tag}.`,
+          `Restored ${tag || BUILD_INFO.tag}.`,
           'border-purple-400',
         );
       });
@@ -2188,7 +2165,7 @@ export class LabApp {
       });
     }
     return {
-      gitCheckpointMeta: GIT_CHECKPOINT_META,
+      gitCheckpointMeta: BUILD_INFO,
       unixTimestampMs: ts.unixMs,
       perfNowMicroseconds: ts.perfNowUs,
       timestampISO: ts.iso,
@@ -2908,6 +2885,14 @@ export class LabApp {
    * into a 100% borderless full-viewport standalone window with all current trials & progress baked in.
    */
   popoutBorderlessWindow() {
+    if (import.meta.env.DEV) {
+      this.showToast(
+        'ℹ️ POP-OUT NEEDS A PRODUCTION BUILD',
+        'The dev server serves unbundled modules. Use "npm run build" + "npm run preview".',
+        'border-amber-400',
+      );
+      return;
+    }
     const fullHtml = this.buildCleanStandaloneHtmlString();
     const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
     const blobUrl = URL.createObjectURL(blob);
@@ -2928,11 +2913,23 @@ export class LabApp {
     }
   }
 
+  /**
+   * Packages and downloads the standalone `index.html` (current state baked in).
+   * Only available from a production build: the dev server serves unbundled modules.
+   */
   exportStandaloneHTMLApp() {
+    if (import.meta.env.DEV) {
+      this.showToast(
+        'ℹ️ EXPORT NEEDS A PRODUCTION BUILD',
+        'Run "npm run build", open the built dist/index.html and export from there.',
+        'border-amber-400',
+      );
+      return;
+    }
     const fullHtml = this.buildCleanStandaloneHtmlString();
 
     const hasValidClosing =
-      fullHtml.includes('window.labApp = new LabApp()') && fullHtml.endsWith('</html>');
+      fullHtml.includes('id="bakedTillmannState"') && fullHtml.endsWith('</html>');
     if (!hasValidClosing) {
       this.showToast(
         '⚠️ HTML PACKAGER ERROR',
@@ -2962,54 +2959,6 @@ export class LabApp {
       `Drop "index.html" into your GitHub repo to launch immediately into Tillmann Reader!`,
       'border-emerald-400',
     );
-  }
-
-  /**
-   * Packages and downloads a complete VS Code TypeScript + HTML + README + JSON .ZIP archive
-   * (`tillmann-reader-vscode-ts.zip`) using our in-memory CRC32 PKZIP generator.
-   */
-  exportVsCodeZipProject() {
-    try {
-      const payload = this.buildPayloadObject();
-      const fullHtml = this.buildCleanStandaloneHtmlString();
-      const readmeMd = VSCodeProjectScaffold.buildReadme(payload);
-      const pkgJson = VSCodeProjectScaffold.buildPackageJson();
-      const tsConfig = VSCodeProjectScaffold.buildTsConfig();
-      const typesTs = VSCodeProjectScaffold.buildTelemetryTypesTs();
-      const mainTs = VSCodeProjectScaffold.buildMainTs();
-      const jsonStr = JSON.stringify(payload, null, 2);
-
-      const zip = new SimpleZipPackager();
-      zip.addFile('index.html', fullHtml);
-      zip.addFile('README.md', readmeMd);
-      zip.addFile('package.json', pkgJson);
-      zip.addFile('tsconfig.json', tsConfig);
-      zip.addFile('src/types/telemetry.ts', typesTs);
-      zip.addFile('src/main.ts', mainTs);
-      zip.addFile('telemetry-ground-truth.json', jsonStr);
-
-      const blob = zip.generateZipBlob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = 'tillmann-reader-vscode-ts.zip';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        if (a.parentNode) document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 5000);
-
-      this.showToast(
-        `📦 VSCODE TS + HTML + README ZIP (${Math.round(blob.size / 1024)} KB) DOWNLOADED!`,
-        'Contains index.html, README.md, package.json, tsconfig.json, src/types/telemetry.ts, src/main.ts & JSON!',
-        'border-amber-400',
-      );
-    } catch (err) {
-      RuntimeWatchdog.recordError('ZIP Export: ' + err.message);
-      this.showToast('⚠️ ZIP EXPORT ERROR', String(err.message), 'border-rose-500');
-    }
   }
 
   /**

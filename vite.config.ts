@@ -21,9 +21,13 @@ function git(args: string[], fallback: string): string {
   }
 }
 
-const commit = git(['rev-parse', '--short=7', 'HEAD'], process.env.GITHUB_SHA?.slice(0, 7) ?? 'dev');
-const committedAt = new Date(
-  git(['show', '-s', '--format=%cI', 'HEAD'], new Date().toISOString()),
+// CI variables win over local git state so builds are reproducible (and work without .git).
+const commit = (process.env.GITHUB_SHA ?? git(['rev-parse', 'HEAD'], 'dev')).slice(0, 7);
+const sourceDateEpoch = process.env.SOURCE_DATE_EPOCH;
+const committedAt = (
+  sourceDateEpoch
+    ? new Date(Number(sourceDateEpoch) * 1000)
+    : new Date(git(['show', '-s', '--format=%cI', 'HEAD'], new Date().toISOString()))
 ).toISOString();
 
 // The production build is a single self-contained index.html (JS + CSS inlined). The app's
