@@ -1,0 +1,9 @@
+dist
+coverage
+node_modules
+package-lock.json
+playwright-report
+test-results
+
+# Hand-authored markup: Prettier's HTML whitespace handling can change inline text and layout.
+index.html

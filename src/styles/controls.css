@@ -1,0 +1,102 @@
+/* 2X ERGONOMIC HERO BUTTONS & CONTROL DECKS (LOW SHANNON ID_GUI < 2.2 BITS) */
+.hero-nav-btn {
+  min-height: 48px;
+  padding: 8px 20px;
+  font-size: 17px;
+  font-weight: 800;
+  border-radius: 10px;
+  border: 2px solid #38bdf8;
+  background: linear-gradient(135deg, #0284c7, #0f172a);
+  color: #f0f9ff;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(2, 132, 199, 0.35);
+  transition: all 0.14s ease;
+}
+.hero-nav-btn.next-hero {
+  border-color: #10b981;
+  background: linear-gradient(135deg, #059669, #064e3b);
+  color: #ecfdf5;
+  box-shadow: 0 4px 18px rgba(16, 185, 129, 0.4);
+}
+.hero-nav-btn:hover {
+  transform: translateY(-1px) scale(1.02);
+  filter: brightness(1.14);
+}
+.hero-nav-btn:active {
+  transform: translateY(1px);
+}
+.hero-audio-btn {
+  min-height: 48px;
+  padding: 8px 18px;
+  font-size: 16px;
+  font-weight: 800;
+  border-radius: 10px;
+  border: 2px solid #f43f5e;
+  background: linear-gradient(135deg, #881337, #1e1b4b);
+  color: #ffe4e6;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(244, 63, 94, 0.35);
+  transition: all 0.16s ease;
+}
+.hero-audio-btn.audio-on {
+  border-color: #fbbf24;
+  background: linear-gradient(135deg, #d97706, #065f46);
+  color: #fef3c7;
+  box-shadow: 0 0 22px rgba(251, 191, 36, 0.5);
+}
+.hero-audio-btn:hover {
+  transform: translateY(-1px) scale(1.03);
+  filter: brightness(1.15);
+}
+
+.ergo-btn {
+  min-height: 40px;
+  padding: 6px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 2px solid #334155;
+  background: #0f172a;
+  color: #e2e8f0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.14s ease;
+}
+.ergo-btn:hover {
+  border-color: #38bdf8;
+  background: #1e293b;
+  color: #ffffff;
+}
+.ergo-btn.active {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.32), rgba(6, 182, 212, 0.28));
+  border-color: #10b981;
+  color: #ecfdf5;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
+}
+
+.ergo-sub-btn {
+  min-height: 36px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1.5px solid #334155;
+  background: #0f172a;
+  color: #cbd5e1;
+  transition: all 0.12s ease;
+}
+.ergo-sub-btn:hover {
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+.ergo-sub-btn.active {
+  background: rgba(16, 185, 129, 0.28);
+  border-color: #34d399;
+  color: #ecfdf5;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.28);
+}

@@ -1,0 +1,323 @@
+/* Self-Contained Layout & 2x Ergonomic Utility Classes */
+.flex {
+  display: flex;
+}
+.inline-flex {
+  display: inline-flex;
+}
+.grid {
+  display: grid;
+}
+.block {
+  display: block;
+}
+.hidden {
+  display: none !important;
+}
+.flex-col {
+  flex-direction: column;
+}
+.flex-wrap {
+  flex-wrap: wrap;
+}
+.flex-1 {
+  flex: 1 1 0%;
+}
+.shrink-0 {
+  flex-shrink: 0;
+}
+.min-w-0 {
+  min-width: 0;
+}
+.min-h-0 {
+  min-height: 0;
+}
+.items-center {
+  align-items: center;
+}
+.items-end {
+  align-items: flex-end;
+}
+.justify-between {
+  justify-content: space-between;
+}
+.justify-center {
+  justify-content: center;
+}
+.gap-1 {
+  gap: 4px;
+}
+.gap-1\.5 {
+  gap: 6px;
+}
+.gap-2 {
+  gap: 8px;
+}
+.gap-2\.5 {
+  gap: 10px;
+}
+.gap-3 {
+  gap: 12px;
+}
+.space-y-3 > * + * {
+  margin-top: 12px;
+}
+.w-full {
+  width: 100%;
+}
+.h-full {
+  height: 100%;
+}
+.w-screen {
+  width: 100vw;
+}
+.h-screen {
+  height: 100vh;
+}
+.p-2 {
+  padding: 8px;
+}
+.p-2\.5 {
+  padding: 10px;
+}
+.p-3 {
+  padding: 12px;
+}
+.px-2 {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.px-3 {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.px-4 {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.py-1 {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.py-1\.5 {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.py-2 {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.my-1 {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+.mb-2 {
+  margin-bottom: 8px;
+}
+.pb-2 {
+  padding-bottom: 8px;
+}
+.relative {
+  position: relative;
+}
+.fixed {
+  position: fixed;
+}
+.inset-0 {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+.z-20 {
+  z-index: 20;
+}
+.z-30 {
+  z-index: 30;
+}
+.z-40 {
+  z-index: 40;
+}
+.z-50 {
+  z-index: 50;
+}
+.overflow-hidden {
+  overflow: hidden;
+}
+.overflow-y-auto {
+  overflow-y: auto;
+}
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.whitespace-nowrap {
+  white-space: nowrap;
+}
+.pointer-events-none {
+  pointer-events: none;
+}
+.pointer-events-auto {
+  pointer-events: auto;
+}
+.select-none {
+  user-select: none;
+}
+.rounded {
+  border-radius: 6px;
+}
+.rounded-lg {
+  border-radius: 10px;
+}
+.rounded-xl {
+  border-radius: 12px;
+}
+.rounded-full {
+  border-radius: 9999px;
+}
+.border {
+  border-width: 1px;
+  border-style: solid;
+}
+.border-2 {
+  border-width: 2px;
+  border-style: solid;
+}
+.border-b {
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+}
+.border-t {
+  border-top-width: 1px;
+  border-top-style: solid;
+}
+.border-slate-700 {
+  border-color: #334155;
+}
+.border-slate-800 {
+  border-color: #1e293b;
+}
+.border-emerald-400 {
+  border-color: #34d399;
+}
+.border-emerald-500 {
+  border-color: #10b981;
+}
+.border-cyan-400 {
+  border-color: #22d3ee;
+}
+.border-amber-400 {
+  border-color: #fbbf24;
+}
+.border-purple-400 {
+  border-color: #c084fc;
+}
+.border-rose-500 {
+  border-color: #f43f5e;
+}
+.bg-slate-950 {
+  background-color: #020617;
+}
+.bg-slate-900 {
+  background-color: #0f172a;
+}
+.bg-slate-800 {
+  background-color: #1e293b;
+}
+.bg-emerald-500 {
+  background-color: #10b981;
+}
+.bg-cyan-400 {
+  background-color: #22d3ee;
+}
+.bg-amber-400 {
+  background-color: #fbbf24;
+}
+.bg-rose-500 {
+  background-color: #f43f5e;
+}
+.text-xs {
+  font-size: 13px;
+}
+.text-sm {
+  font-size: 15px;
+}
+.text-base {
+  font-size: 17px;
+}
+.text-lg {
+  font-size: 19px;
+}
+.font-medium {
+  font-weight: 500;
+}
+.font-semibold {
+  font-weight: 600;
+}
+.font-bold {
+  font-weight: 700;
+}
+.uppercase {
+  text-transform: uppercase;
+}
+.tracking-wider {
+  letter-spacing: 0.05em;
+}
+.text-slate-100 {
+  color: #f1f5f9;
+}
+.text-slate-200 {
+  color: #e2e8f0;
+}
+.text-slate-300 {
+  color: #cbd5e1;
+}
+.text-slate-400 {
+  color: #94a3b8;
+}
+.text-slate-500 {
+  color: #64748b;
+}
+.text-emerald-300 {
+  color: #6ee7b7;
+}
+.text-emerald-400 {
+  color: #34d399;
+}
+.text-cyan-300 {
+  color: #67e8f9;
+}
+.text-cyan-400 {
+  color: #22d3ee;
+}
+.text-sky-300 {
+  color: #7dd3fc;
+}
+.text-amber-300 {
+  color: #fcd34d;
+}
+.text-amber-400 {
+  color: #fbbf24;
+}
+.text-purple-300 {
+  color: #d8b4fe;
+}
+.text-purple-400 {
+  color: #c084fc;
+}
+.text-rose-300 {
+  color: #fda4af;
+}
+.text-rose-400 {
+  color: #fb7185;
+}
+.shadow-lg {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+}
+.shadow-xl {
+  box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.78);
+}
+.transition {
+  transition: all 0.15s ease;
+}

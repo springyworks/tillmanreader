@@ -1,17 +1,62 @@
 {
-  "name": "tillmann-reader-hci-lab",
-  "version": "2.6.0",
+  "name": "tillmann-reader",
+  "version": "3.0.0",
   "private": true,
-  "description": "The Tillmann Games — Ground-Truth HCI, Psychomotor Fitts/We & Adaptive Reading Tutor",
+  "description": "The Tillmann Games — ground-truth HCI, psychomotor Fitts/We and adaptive reading lab",
+  "keywords": [
+    "hci",
+    "fitts-law",
+    "telemetry",
+    "adaptive-reading",
+    "typescript",
+    "vite"
+  ],
+  "license": "MIT",
+  "author": "springyworks",
+  "homepage": "https://springyworks.github.io/tillmanreader/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/springyworks/tillmanreader.git"
+  },
+  "bugs": {
+    "url": "https://github.com/springyworks/tillmanreader/issues"
+  },
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
-    "dev": "vite --open",
-    "build": "tsc && vite build",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test"
   },
   "devDependencies": {
-    "typescript": "^5.6.3",
-    "vite": "^5.4.10"
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^22.20.5",
+    "@vitest/coverage-v8": "^5.1.0",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.14.0",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.6",
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "minimatch": "^11.0.5"
   }
 }

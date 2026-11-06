@@ -1,0 +1,99 @@
+/* Mobile-First Compact Horizontal Control Strips (Never Eats Vertical Play Arena) */
+@media (max-width: 767px) {
+  #topHeader,
+  #subControlDeck {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding: 4px 8px !important;
+    gap: 6px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  #topHeader > div,
+  #subControlDeck > div {
+    flex-wrap: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+  .hero-nav-btn {
+    min-height: 38px !important;
+    padding: 4px 12px !important;
+    font-size: 13px !important;
+  }
+  .ergo-btn,
+  .ergo-sub-btn {
+    min-height: 32px !important;
+    padding: 3px 9px !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+  }
+  #activeStageBadge {
+    font-size: 12px !important;
+    padding: 4px 8px !important;
+  }
+  #drawerHandle {
+    height: 44px !important;
+    min-height: 44px !important;
+    padding: 0 8px !important;
+  }
+}
+/* PHONE / SMALL-TOUCH LAYOUT: icon-only big buttons that always fit (PREV, VOICE, FULL ... NEXT),
+       no sideways scrolling, developer export buttons tucked away, arena gets the room. */
+@media (max-width: 767px), (max-height: 500px) {
+  #topHeader {
+    overflow: visible !important;
+    justify-content: space-between !important;
+    padding: 4px 8px !important;
+  }
+  #topHeader > .flex-col {
+    display: none !important;
+  }
+  #topHeader .hero-nav-btn,
+  #topHeader .hero-audio-btn {
+    min-height: 46px !important;
+    min-width: 56px;
+    padding: 4px 14px !important;
+    font-size: 20px !important;
+    justify-content: center;
+  }
+  #btnPrevLevel > span:nth-child(2),
+  #btnNextLevel > span:first-child,
+  #heroAudioText,
+  #fsText {
+    display: none !important;
+  }
+  #btnNextLevel {
+    min-width: 76px !important;
+  }
+  #btnPrevLevel,
+  #btnNextLevel {
+    font-size: 24px !important;
+  }
+  #btnDownloadVsCodeZip,
+  #btnTopSavedJson,
+  #btnStandaloneExport,
+  #btnCloudShareGuide {
+    display: none !important;
+  }
+  #drawerStateBtns {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  #drawerStateBtns .dstate-btn {
+    min-height: 34px !important;
+    font-size: 12px !important;
+    padding: 2px 10px !important;
+  }
+}
+@media (max-height: 500px) {
+  #telemetryDrawer[data-state='1'] {
+    height: min(310px, 34vh);
+    height: min(310px, 34dvh);
+  }
+  #telemetryDrawer[data-state='2'] {
+    height: calc(52dvh - 30px);
+  }
+  #arenaContainer {
+    min-height: 30vh;
+    min-height: 30dvh;
+  }
+}

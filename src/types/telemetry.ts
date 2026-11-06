@@ -15,21 +15,12 @@ export interface SignatureMetric {
 }
 
 export type ForeperiodDistribution =
-  | 'AUTO_ADAPT'
-  | 'ISOCHRONOUS'
-  | 'EXPONENTIAL'
-  | 'UNIFORM'
-  | 'BIMODAL'
-  | 'WEIBULL';
+  'AUTO_ADAPT' | 'ISOCHRONOUS' | 'EXPONENTIAL' | 'UNIFORM' | 'BIMODAL' | 'WEIBULL';
 
 export type AimStrategy = 'NATURAL' | 'BULLSEYE' | 'RIM_GRAZE';
 
 export type TrialRegime =
-  | 'MOTOR_LOCKED'
-  | 'COGNITIVE_SEARCH'
-  | 'TELEMETRY_INSPECTION'
-  | 'AFFECTIVE_GESTURE'
-  | 'AWAY_PAUSE';
+  'MOTOR_LOCKED' | 'COGNITIVE_SEARCH' | 'TELEMETRY_INSPECTION' | 'AFFECTIVE_GESTURE' | 'AWAY_PAUSE';
 
 export interface ForeperiodRecord {
   tw: number;

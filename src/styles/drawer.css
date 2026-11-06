@@ -1,0 +1,50 @@
+/* Bottom Pull-Up / Pull-Down Affordance Drawer (2x Larger Ergonomic Handle) */
+/* The drawer is a normal flex row under the arena, so opening it shrinks the arena
+       instead of covering it. Every state leaves the arena >= ~40% of the screen. */
+#telemetryDrawer {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  z-index: 40;
+  background: rgba(9, 14, 26, 0.98);
+  backdrop-filter: blur(16px);
+  border-top: 2px solid #1e293b;
+  transition:
+    height 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s ease,
+    border-color 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 44px;
+}
+#telemetryDrawer[data-state='0'] {
+  height: 44px;
+}
+#telemetryDrawer[data-state='1'] {
+  height: min(310px, 36vh);
+  height: min(310px, 36dvh);
+}
+#telemetryDrawer[data-state='2'] {
+  height: calc(60vh - 64px);
+  height: calc(60dvh - 64px);
+}
+#arenaContainer {
+  min-height: 36vh;
+  min-height: 36dvh;
+}
+#telemetryDrawer.proximity-glow {
+  border-top-color: #38bdf8;
+  box-shadow: 0 -10px 32px rgba(56, 189, 248, 0.28);
+}
+#drawerHandle {
+  height: 54px;
+  min-height: 54px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.cat-pill.active {
+  background-color: #0284c7;
+  border-color: #38bdf8;
+  color: #ffffff;
+}
