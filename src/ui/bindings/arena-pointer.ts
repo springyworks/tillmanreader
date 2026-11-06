@@ -103,14 +103,16 @@ function unlockOnFirstTouch(app: LabApp, e: PointerEvent): void {
     app.voiceEngine.ensureContext();
     const heroAudioText = maybeById('heroAudioText');
     if (heroAudioText) heroAudioText.textContent = 'STEM: AAN';
-    const who = app.tutor.vocative();
+    const who = app.tutor.vocative(true);
     if (app.level === 7 && app.activeReadingItem) {
+      const nextQ = app.tutor.pickNextTargetPrompt(app.activeReadingItem.target);
       app.voiceEngine.speakDutchTutor(
         `Hoi ${who}! Pak het blauwe handvat bovenaan en sleep rustig.`,
-        app.activeReadingItem.target,
+        nextQ,
+        'JOYFUL_SPARK',
       );
     } else {
-      app.voiceEngine.speakDutchTutor(`Hoi ${who}! Veel plezier!`);
+      app.voiceEngine.speakDutchTutor(`Hoi ${who}! Veel plezier!`, null, 'JOYFUL_SPARK');
     }
   }
   const isMobileTouch = window.innerWidth < 900 || e.pointerType === 'touch';
@@ -181,16 +183,17 @@ function grabScoopVisor(app: LabApp, e: PointerEvent, now: number): void {
     );
     if (strayTapCount >= 2) {
       strayTapCount = 0;
-      const who = app.tutor.vocative();
-      const hint = `Pak eerst het blauwe handvat bij het doel bovenaan, ${who}, en sleep het naar beneden.`;
+      const hint =
+        'Pak eerst het blauwe handvat bij het doel bovenaan en sleep het kijkertje rustig omlaag.';
       app.tutor.logExternalEvent(
         'GIMBAL_ASSIST',
         `L${app.level}`,
         'Losse tik buiten het Scoop-handvat — handvat bij doel-centrum oplichtend gemaakt.',
         hint,
         `tap=(${Math.round(e.offsetX)},${Math.round(e.offsetY)})`,
+        'WARM_ENCOURAGE',
       );
-      app.voiceEngine.speakDutchTutor(hint);
+      app.voiceEngine.speakDutchTutor(hint, null, 'WARM_ENCOURAGE');
     } else {
       app.voiceEngine.playPreset('ASK_GLISS');
     }
@@ -296,7 +299,8 @@ function onArenaPointerUp(app: LabApp, e: PointerEvent): void {
     }
     if (assist.dutchSpeech) {
       app.hud.showToast('🔭 EVEN HELPEN MET STUREN', assist.dutchSpeech, 'border-cyan-400');
-      app.voiceEngine.speakDutchTutor(assist.dutchSpeech, app.activeReadingItem?.target);
+      const nextQ = app.tutor.pickNextTargetPrompt(app.activeReadingItem?.target);
+      app.voiceEngine.speakDutchTutor(assist.dutchSpeech, nextQ, assist.voiceEmotion);
     } else {
       app.voiceEngine.playPreset('ASK_GLISS');
     }

@@ -2,6 +2,13 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Debug in VS Code Built-in Edge (npm run dev)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}"
+    },
+    {
       "name": "Debug in Chrome (npm run dev)",
       "type": "chrome",
       "request": "launch",

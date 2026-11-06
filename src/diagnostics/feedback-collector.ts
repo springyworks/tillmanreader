@@ -1,3 +1,4 @@
+import { VOICE_EMOTION_PROFILES } from '../audio/voice-emotion';
 import type { TutorStatusSnapshot, TutorTickerItem } from '../engines/embedded-tutor-engine';
 import type { ResolvedGuiTarget } from './gui-inspector';
 import { TimeStampUtil } from '../util/timestamp';
@@ -109,9 +110,9 @@ export class FeedbackCollector {
       domSelector: `#humanTutorModal :: Ticker#${ticker.seq}`,
       rectSummary: ticker.metricsTag,
       reactionTag,
-      tickerRef: `#${ticker.seq} (${ticker.timeLabel}) ${ticker.dutchSpeech ? `🗣️ "${ticker.dutchSpeech}"` : ''}`,
+      tickerRef: `#${ticker.seq} (${ticker.timeLabel})${ticker.voiceEmotion ? ` [${VOICE_EMOTION_PROFILES[ticker.voiceEmotion].badge} ${ticker.voiceEmotion}]` : ''} ${ticker.dutchSpeech ? `🗣️ "${ticker.dutchSpeech}"` : ''}`,
       comment: comment.trim() || reactionTag,
-      stateContext: `learner="${tutorStatus.learnerName}" • streak=${tutorStatus.calmStreak} • comfort=${tutorStatus.steeringComfortPct}%`,
+      stateContext: `learner="${tutorStatus.learnerName}" • streak=${tutorStatus.calmStreak} • comfort=${tutorStatus.steeringComfortPct}% • emotion=${tutorStatus.lastVoiceEmotion}`,
     };
     this.entries.push(entry);
     this.persist();
@@ -152,10 +153,12 @@ export class FeedbackCollector {
   ): string {
     const lines: string[] = [
       `=== TILLMANN HUMAN-TUTOR & GUI FEEDBACK BUFFER (${this.entries.length} items) ===`,
-      `Learner: "${tutorStatus.learnerName}" | Tutor Active: ${tutorStatus.enabled} | Comfort: ${tutorStatus.steeringComfortPct}%`,
+      `Learner: "${tutorStatus.learnerName}" | Tutor Active: ${tutorStatus.enabled} | Comfort: ${tutorStatus.steeringComfortPct}% | Emotion: ${tutorStatus.lastVoiceEmotion}`,
       `Goal Throttle: ${tutorStatus.fadeUnlocked ? `FADE (${tutorStatus.fadeHoldMs}ms hold -> ${tutorStatus.fadeDurationMs}ms fade)` : `STEADY (${tutorStatus.calmStreak}/${tutorStatus.requiredFadeBaselineHits} calm hits)`}`,
       `Last Tutor Decision: ${tutorStatus.lastDecision}`,
-      tutorStatus.lastDutchSpeech ? `Last Dutch Voice: "${tutorStatus.lastDutchSpeech}"` : '',
+      tutorStatus.lastDutchSpeech
+        ? `Last Dutch Voice [${VOICE_EMOTION_PROFILES[tutorStatus.lastVoiceEmotion].badge}]: "${tutorStatus.lastDutchSpeech}"`
+        : '',
       '',
     ].filter((l) => l !== '');
 
@@ -178,8 +181,9 @@ export class FeedbackCollector {
     if (recentTickers.length > 0) {
       lines.push('--- Recent Built-in Tutor Tickers (latest 10) ---');
       for (const t of recentTickers.slice(0, 10)) {
+        const emoTag = t.voiceEmotion ? `[${VOICE_EMOTION_PROFILES[t.voiceEmotion].badge}] ` : '';
         lines.push(
-          `  #${t.seq} [${t.timeLabel} • ${t.stageLabel} • ${t.kind}] ${t.summary}${t.dutchSpeech ? ` | 🗣️ "${t.dutchSpeech}"` : ''} (${t.metricsTag})`,
+          `  #${t.seq} [${t.timeLabel} • ${t.stageLabel} • ${t.kind}] ${t.summary}${t.dutchSpeech ? ` | 🗣️ ${emoTag}"${t.dutchSpeech}"` : ''} (${t.metricsTag})`,
         );
       }
     }

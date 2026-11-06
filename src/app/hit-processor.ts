@@ -1,3 +1,4 @@
+import type { VoiceEmotionId } from '../audio/voice-emotion';
 import { byId, maybeById } from '../util/dom';
 import type { PointingTarget, PulseTarget, ReadingTarget, Target } from '../types/arena';
 import type { LabApp } from './lab-app';
@@ -192,9 +193,17 @@ export class HitProcessor {
     byId('l7StageName').textContent = this.app.reading.getCurrentStageConfig().name;
 
     if (rt.isTarget) {
-      this.celebrateCorrectBubble(rt, x, y, now, outcome.stageChanged, outcome.dutchCoachLine);
+      this.celebrateCorrectBubble(
+        rt,
+        x,
+        y,
+        now,
+        outcome.stageChanged,
+        outcome.dutchCoachLine,
+        outcome.voiceEmotion,
+      );
     } else {
-      this.bumpDistractor(rt, outcome.stageChanged, outcome.dutchCoachLine);
+      this.bumpDistractor(rt, outcome.stageChanged, outcome.dutchCoachLine, outcome.voiceEmotion);
     }
   }
 
@@ -218,19 +227,44 @@ export class HitProcessor {
     now: number,
     stageChanged: 'PROMOTED' | 'STEPPED_BACK' | 'RETURNED_UP' | 'STEADY',
     dutchCoachLine: string | null,
+    voiceEmotion: VoiceEmotionId,
   ): void {
-    const item = this.app.activeReadingItem;
-    // Play acoustic phonetic joke stinger; if Dutch tutor speaks, combine into one natural utterance!
-    const jokeSub = this.app.voiceEngine.speakGraphemeOrWord(rt.text, 'CELEBRATE');
-    if (this.app.semanticMorphEnabled && item) {
+    const prevItem = this.app.activeReadingItem;
+
+    const chord = Math.max(
+      30,
+      Math.hypot(rt.x - this.app.trialStartPos.x, rt.y - this.app.trialStartPos.y),
+    );
+    const id = Math.log2(chord / (2 * rt.r) + 1);
+    this.recordPointingSuccess(now, id, x, y, rt);
+    this.app.persistence.saveToBrowser(this.app);
+
+    // Spawn next trial silently first so we know the next target and never cancel active praise!
+    if (!this.app.flow.advanceEnvelopeTutor()) {
+      this.app.spawner.spawnForCurrentLevel(true);
+    }
+    this.app.flow.syncStageUI();
+
+    const nextPrompt =
+      this.app.level === 7
+        ? this.app.tutor.pickNextTargetPrompt(this.app.activeReadingItem?.target)
+        : null;
+
+    // Play the hit letter's acoustic joke; skip its single-word TTS if the Tutor is speaking a full emotional phrase!
+    const jokeSub = this.app.voiceEngine.speakGraphemeOrWord(rt.text, 'CELEBRATE', {
+      skipHumanSpeech: Boolean(dutchCoachLine),
+      nextPromptLine: dutchCoachLine ? null : nextPrompt,
+    });
+
+    if (this.app.semanticMorphEnabled && prevItem) {
       this.app.activeMorphs.push({
         x: rt.x,
         y: rt.y,
         r: rt.r,
         startTime: now,
         durationMs: 1350,
-        semanticKey: item.morph || 'BALL',
-        label: jokeSub || item.morphLabel || rt.text,
+        semanticKey: prevItem.morph || 'BALL',
+        label: jokeSub || prevItem.morphLabel || rt.text,
         gazeDwellMs: 0,
       });
     }
@@ -251,32 +285,17 @@ export class HitProcessor {
       this.app.hud.showToast('🗣️ NEDERLANDSE TUTOR', dutchCoachLine, 'border-emerald-400');
     }
 
-    const chord = Math.max(
-      30,
-      Math.hypot(rt.x - this.app.trialStartPos.x, rt.y - this.app.trialStartPos.y),
-    );
-    const id = Math.log2(chord / (2 * rt.r) + 1);
-    this.recordPointingSuccess(now, id, x, y, rt);
-    this.app.persistence.saveToBrowser(this.app);
-
-    // Spawn next trial silently so speechSynthesis never cuts off the celebratory joke or Dutch praise!
-    if (!this.app.flow.advanceEnvelopeTutor()) {
-      this.app.spawner.spawnForCurrentLevel(true);
-    }
-    this.app.flow.syncStageUI();
-
     if (dutchCoachLine) {
-      const hitWord = rt.text.replace('-', '');
-      const nextTarget = this.app.activeReadingItem?.target ?? null;
-      this.app.voiceEngine.speakDutchTutor(`${hitWord}! ${dutchCoachLine}`, nextTarget);
+      this.app.voiceEngine.speakDutchTutor(dutchCoachLine, nextPrompt, voiceEmotion, 0.34);
     }
   }
 
-  /** A wrong bubble resets the fade streak, docks the visor at Goal Center, and scaffolds calmly in Dutch. */
+  /** A wrong bubble resets the fade streak, docks the visor at Goal Center, and scaffolds soothingly in Dutch. */
   private bumpDistractor(
     rt: ReadingTarget,
     stageChanged: 'PROMOTED' | 'STEPPED_BACK' | 'RETURNED_UP' | 'STEADY',
     dutchCoachLine: string | null,
+    voiceEmotion: VoiceEmotionId,
   ): void {
     const gm = this.app.goalMemory;
     this.app.voiceEngine.speakDistractorBump(rt.text);
@@ -295,7 +314,8 @@ export class HitProcessor {
         msg,
         'border-amber-400',
       );
-      this.app.voiceEngine.speakDutchTutor(msg, this.app.activeReadingItem?.target);
+      const nextPrompt = this.app.tutor.pickNextTargetPrompt(this.app.activeReadingItem?.target);
+      this.app.voiceEngine.speakDutchTutor(msg, nextPrompt, voiceEmotion, 0.2);
       return;
     }
 
@@ -304,7 +324,7 @@ export class HitProcessor {
     const targetTxt = this.app.activeReadingItem ? this.app.activeReadingItem.target : '';
     const msg = dutchCoachLine || `Bijna! Kijk rustig bovenaan naar "${targetTxt}".`;
     this.app.hud.showToast(`🛡️ NOG EEN KEER: Zoek "${targetTxt}"`, msg, 'border-amber-400');
-    this.app.voiceEngine.speakDutchTutor(msg);
+    this.app.voiceEngine.speakDutchTutor(msg, null, voiceEmotion, 0.2);
   }
 
   private countCorrectTrial(): void {

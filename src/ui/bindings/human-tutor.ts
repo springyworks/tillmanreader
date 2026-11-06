@@ -1,4 +1,9 @@
 import type { LabApp } from '../../app/lab-app';
+import {
+  VOICE_EMOTION_PROFILES,
+  isVoiceEmotionId,
+  type VoiceEmotionId,
+} from '../../audio/voice-emotion';
 import { resolveGuiTargetAtPoint, type ResolvedGuiTarget } from '../../diagnostics/gui-inspector';
 import { byId, maybeById, onClick } from '../../util/dom';
 
@@ -70,7 +75,26 @@ export function renderHumanTutorModal(app: LabApp): void {
     const fadeDesc = status.fadeUnlocked
       ? `Zachte fade (${(status.fadeHoldMs / 1000).toFixed(1)}s vast → ${(status.fadeDurationMs / 1000).toFixed(1)}s fade)`
       : `VAST ZICHTBAAR (${status.calmStreak}/${status.requiredFadeBaselineHits} rustige treffers nodig)`;
-    liveEl.textContent = `Leerling: "${status.learnerName}" • Doel-throttle: ${fadeDesc} • Stuur-comfort: ${status.steeringComfortPct}% • Laatste besluit: ${status.lastDecision}`;
+    const emoBadge = VOICE_EMOTION_PROFILES[status.lastVoiceEmotion].badge;
+    const voiceName = app.voiceEngine.nlVoice?.name
+      ? app.voiceEngine.nlVoice.name.replace(/Microsoft |Online |\(Natural\) - .*/g, '').trim()
+      : 'Formant+TTS';
+    liveEl.textContent = `Leerling: "${status.learnerName}" • Stem: ${voiceName} [${emoBadge}] • Doel: ${fadeDesc} • Comfort: ${status.steeringComfortPct}%`;
+  }
+
+  // Sync Emotion Sliders & Active Emotion Highlight
+  const exprPct = Math.round(app.voiceEngine.emotionControls.expressiveness * 100);
+  const ratePct = Math.round(app.voiceEngine.emotionControls.speakingRateScale * 100);
+  const lblExpr = maybeById('lblEmotionExpr');
+  if (lblExpr) lblExpr.textContent = `${exprPct}%`;
+  const rngExpr = maybeById('rngEmotionExpr', HTMLInputElement);
+  if (rngExpr) rngExpr.value = String(exprPct);
+  const lblRate = maybeById('lblEmotionRate');
+  if (lblRate) lblRate.textContent = `${ratePct}%`;
+  const rngRate = maybeById('rngEmotionRate', HTMLInputElement);
+  if (rngRate) rngRate.value = String(ratePct);
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('.emo-preview-btn')) {
+    btn.classList.toggle('active', btn.dataset.emo === app.voiceEngine.lastEmotionPlayed);
   }
 
   // 3. Chronological Tutor Tickers List with 1-tap Human-Tutor feedback buttons
@@ -102,7 +126,10 @@ export function renderHumanTutorModal(app: LabApp): void {
       if (tk.dutchSpeech) {
         const speechDiv = document.createElement('div');
         speechDiv.className = 'text-amber-300 italic';
-        speechDiv.textContent = `🗣️ NL Stem: "${tk.dutchSpeech}"`;
+        const emoPrefix = tk.voiceEmotion
+          ? `[${VOICE_EMOTION_PROFILES[tk.voiceEmotion].badge}] `
+          : '';
+        speechDiv.textContent = `🗣️ ${emoPrefix}"${tk.dutchSpeech}"`;
         row.appendChild(speechDiv);
       }
 
@@ -348,6 +375,47 @@ export function bindHumanTutorAndGuiFeedback(app: LabApp): void {
       e.preventDefault();
       maybeById('quickGuiCommentModal')?.classList.add('hidden');
     }
+  });
+
+  // 1-Tap Voice Emotion Audition Chips & Live Prosody Sliders
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('.emo-preview-btn')) {
+    btn.addEventListener('click', () => {
+      const emoRaw = btn.dataset.emo;
+      if (!isVoiceEmotionId(emoRaw)) return;
+      const emo: VoiceEmotionId = emoRaw;
+      const spoken = app.voiceEngine.previewEmotion(emo);
+      maybeById('btnHeroAudio')?.classList.add('audio-on');
+      const iconEl = maybeById('heroAudioIcon');
+      if (iconEl) iconEl.textContent = '🔊';
+      const txtEl = maybeById('heroAudioText');
+      if (txtEl) txtEl.textContent = 'STEM & FX: AAN';
+
+      const expr = Math.round(app.voiceEngine.emotionControls.expressiveness * 100);
+      const rate = Math.round(app.voiceEngine.emotionControls.speakingRateScale * 100);
+      app.tutor.logExternalEvent(
+        'VOICE_PRAISE',
+        currentLevelLabel(app),
+        `Stem-emotie beluisterd: ${VOICE_EMOTION_PROFILES[emo].shortLabel} (expressie=${expr}%, tempo=${rate}%).`,
+        spoken,
+        `expr=${expr}% • rate=${rate}%`,
+        emo,
+      );
+      renderHumanTutorModal(app);
+    });
+  }
+
+  maybeById('rngEmotionExpr', HTMLInputElement)?.addEventListener('input', (e) => {
+    const val = Number((e.currentTarget as HTMLInputElement).value);
+    app.voiceEngine.emotionControls.expressiveness = Number((val / 100).toFixed(2));
+    const lbl = maybeById('lblEmotionExpr');
+    if (lbl) lbl.textContent = `${val}%`;
+  });
+
+  maybeById('rngEmotionRate', HTMLInputElement)?.addEventListener('input', (e) => {
+    const val = Number((e.currentTarget as HTMLInputElement).value);
+    app.voiceEngine.emotionControls.speakingRateScale = Number((val / 100).toFixed(2));
+    const lbl = maybeById('lblEmotionRate');
+    if (lbl) lbl.textContent = `${val}%`;
   });
 
   // Global Shortcut: Ctrl + Alt + G -> Capture GUI_ID under cursor + accumulative comment -> Clipboard!

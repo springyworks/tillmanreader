@@ -1,3 +1,11 @@
+import {
+  VOICE_EMOTION_PROFILES,
+  computeUtteranceProsody,
+  selectBestDutchVoice,
+  type VoiceEmotionControls,
+  type VoiceEmotionId,
+} from './voice-emotion';
+
 /** Vowel and diphthong keys of the formant table. */
 export type VowelName = 'AA' | 'OO' | 'OE' | 'UU' | 'UI' | 'IJ' | 'IE' | 'EU' | 'EH' | 'UH' | 'MM';
 
@@ -85,11 +93,14 @@ export class VocalTractFormantEngine {
   noiseBuffer: AudioBuffer | null;
   utteranceCount: number;
   lastPresetPlayed: VocalPresetName | 'NONE';
+  lastEmotionPlayed: VoiceEmotionId;
+  emotionControls: VoiceEmotionControls;
   lastPhoneticSubtitle: string;
   nlVoice: SpeechSynthesisVoice | null;
   readonly formants: Record<VowelName, FormantTriple>;
   /** Stays `undefined` in browsers without speech synthesis, where `initSpeechSynthesisVoices` returns early. */
   _voicesLoaded: boolean | undefined;
+  private suppressHumanSpeech = false;
 
   /**
    * Pure Parametric Articulatory & Formant Vocal-Tract Synthesizer + Clear Human Speech
@@ -116,6 +127,12 @@ export class VocalTractFormantEngine {
     this.noiseBuffer = null;
     this.utteranceCount = 0;
     this.lastPresetPlayed = 'NONE';
+    this.lastEmotionPlayed = 'WARM_ENCOURAGE';
+    this.emotionControls = {
+      expressiveness: 1.08,
+      speakingRateScale: 0.96,
+      warmthBias: 0,
+    };
     this.lastPhoneticSubtitle = '';
     this.nlVoice = null;
 
@@ -141,27 +158,55 @@ export class VocalTractFormantEngine {
     if (!('speechSynthesis' in window)) return;
     this._voicesLoaded = false;
     const pickVoice = () => {
-      if (this._voicesLoaded) return;
       try {
         const voices = window.speechSynthesis.getVoices() || [];
         if (voices.length > 0) {
           this._voicesLoaded = true;
-          this.nlVoice =
-            voices.find((v) => v.lang && v.lang.toLowerCase().startsWith('nl')) ||
-            voices.find((v) => v.lang && v.lang.toLowerCase().startsWith('de')) ||
-            voices[0] ||
-            null;
-          if (window.speechSynthesis.onvoiceschanged !== undefined) {
-            window.speechSynthesis.onvoiceschanged = null;
-          }
+          this.nlVoice = selectBestDutchVoice(voices);
         }
       } catch {
         // Voice lookup is best effort; the formant synth works without a spoken voice.
       }
     };
     pickVoice();
-    if (!this._voicesLoaded && window.speechSynthesis.onvoiceschanged !== undefined) {
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
       window.speechSynthesis.onvoiceschanged = pickVoice;
+    }
+  }
+
+  /**
+   * Enqueues or replaces a Dutch spoken clause in Web Speech API with explicit pitch, rate & volume.
+   * Passing `flushQueue = false` queues a second clause (e.g. a curious follow-up question) right
+   * behind an emotional praise clause without cancelling it!
+   */
+  enqueueUtterance(
+    spokenText: string,
+    pitch = 1.1,
+    rate = 0.96,
+    volume = 0.92,
+    flushQueue = true,
+  ): void {
+    if (
+      !this.enabled ||
+      this.suppressHumanSpeech ||
+      !('speechSynthesis' in window) ||
+      !spokenText.trim()
+    ) {
+      return;
+    }
+    try {
+      if (flushQueue) {
+        window.speechSynthesis.cancel();
+      }
+      const utter = new SpeechSynthesisUtterance(spokenText);
+      if (this.nlVoice) utter.voice = this.nlVoice;
+      utter.lang = this.nlVoice && this.nlVoice.lang ? this.nlVoice.lang : 'nl-NL';
+      utter.pitch = pitch;
+      utter.rate = rate;
+      utter.volume = volume;
+      window.speechSynthesis.speak(utter);
+    } catch {
+      // Speech is an optional extra on top of the synthesized voice; never let it interrupt the sounds.
     }
   }
 
@@ -170,54 +215,103 @@ export class VocalTractFormantEngine {
    * with our parametric formant vocal-tract engine so words are 100% intelligible
    * AND accompanied by our formant character + tiny joke!
    */
-  speakClearHumanText(spokenText: string, pitch = 1.12, rate = 0.96): void {
-    if (!this.enabled || !('speechSynthesis' in window)) return;
-    try {
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(spokenText);
-      if (this.nlVoice) utter.voice = this.nlVoice;
-      utter.lang = this.nlVoice && this.nlVoice.lang ? this.nlVoice.lang : 'nl-NL';
-      utter.pitch = pitch;
-      utter.rate = rate;
-      utter.volume = 0.92;
-      window.speechSynthesis.speak(utter);
-    } catch {
-      // Speech is an optional extra on top of the synthesized voice; never let it interrupt the sounds.
+  speakClearHumanText(spokenText: string, pitch = 1.12, rate = 0.96, flushQueue = true): void {
+    this.enqueueUtterance(spokenText, pitch, rate, 0.92, flushQueue);
+  }
+
+  /**
+   * Plays an affective 3-formant vocal-tract gesture (`"Mmmm-hm"`, `"Oooo-wauw!"`, `"Hihi!"`,
+   * `"Oooo-mm..."`, `"Hmm-oeh?"`) modulated by `this.emotionControls`.
+   */
+  playEmotionGesture(emotion: VoiceEmotionId, startDelay = 0): void {
+    if (!this.enabled) return;
+    this.ensureContext();
+    this.lastEmotionPlayed = emotion;
+    const spec = VOICE_EMOTION_PROFILES[emotion];
+    const expr = Math.max(0.4, Math.min(1.6, this.emotionControls.expressiveness));
+    const f0Scale = 1 + this.emotionControls.warmthBias * 0.55;
+
+    for (const note of spec.tractNotes) {
+      const baseStart = (note.f0Start ?? 210) * f0Scale;
+      const rawEnd = (note.f0End ?? 250) * f0Scale;
+      const scaledEnd = baseStart + (rawEnd - baseStart) * expr;
+      const scaledMid =
+        note.f0Mid !== undefined && note.f0Mid !== null
+          ? baseStart + (note.f0Mid * f0Scale - baseStart) * expr
+          : null;
+      this.synthesizeTract({
+        ...note,
+        startDelay: startDelay + (note.startDelay ?? 0),
+        f0Start: baseStart,
+        f0Mid: scaledMid,
+        f0End: scaledEnd,
+        vibratoDepth: (note.vibratoDepth ?? 6) * (0.65 + 0.35 * expr),
+      });
+    }
+    for (const fric of spec.fricatives ?? []) {
+      this.synthesizeFricative({
+        ...fric,
+        startDelay: startDelay + (fric.startDelay ?? 0),
+      });
+    }
+    for (const chime of spec.chimes ?? []) {
+      this.synthesizeJokeTone({
+        ...chime,
+        startDelay: startDelay + (chime.startDelay ?? 0),
+      });
     }
   }
 
   /**
-   * Speaks a warm Dutch Embedded-Tutor coaching sentence (optionally followed seamlessly by
-   * `"Zoek nu: <target>"` in the same utterance so `speechSynthesis.cancel()` never cuts off
-   * encouragement when the next trial spawns!).
+   * Speaks a warm, emotionally modulated Dutch Embedded-Tutor line, optionally followed by a
+   * second clause with inquisitive `CURIOUS_WONDER` prosody for the next target so praise and
+   * prompt each carry natural human intonation without cutting each other off.
    */
-  speakDutchTutor(coachLine: string, nextPromptTarget?: string | null): void {
+  speakDutchTutor(
+    coachLine: string,
+    nextPromptOrTarget?: string | null,
+    emotion: VoiceEmotionId = 'WARM_ENCOURAGE',
+    gestureDelaySec = 0,
+  ): void {
     if (!this.enabled) return;
     this.ensureContext();
     this.utteranceCount++;
+    this.lastEmotionPlayed = emotion;
 
-    const cleanNext = nextPromptTarget ? nextPromptTarget.replace('-', '').trim() : '';
-    const fullLine = cleanNext ? `${coachLine} Zoek nu: ${cleanNext}.` : coachLine;
-    this.lastPhoneticSubtitle = `🗣️ ${fullLine}`;
+    const rawNext = (nextPromptOrTarget || '').trim();
+    let nextClause = '';
+    if (rawNext) {
+      nextClause = rawNext.includes(' ') ? rawNext : `Waar zie jij nu ${rawNext.replace('-', '')}?`;
+    }
 
-    // Gentle warm two-note formant chime before the Dutch voice speaks
-    this.synthesizeJokeTone({
-      startDelay: 0,
-      dur: 0.11,
-      fStart: 440,
-      fEnd: 523,
-      type: 'triangle',
-      gainLevel: 0.25,
-    });
-    this.synthesizeJokeTone({
-      startDelay: 0.11,
-      dur: 0.14,
-      fStart: 523,
-      fEnd: 659,
-      type: 'triangle',
-      gainLevel: 0.24,
-    });
-    this.speakClearHumanText(fullLine, 1.08, 0.95);
+    const badge = VOICE_EMOTION_PROFILES[emotion].badge;
+    const fullLine = nextClause ? `${coachLine} ${nextClause}` : coachLine;
+    this.lastPhoneticSubtitle = `${badge} ${fullLine}`;
+
+    this.playEmotionGesture(emotion, gestureDelaySec);
+
+    const mainProsody = computeUtteranceProsody(emotion, this.emotionControls);
+    this.enqueueUtterance(coachLine, mainProsody.pitch, mainProsody.rate, mainProsody.volume, true);
+
+    if (nextClause) {
+      const askProsody = computeUtteranceProsody('CURIOUS_WONDER', this.emotionControls);
+      this.enqueueUtterance(
+        nextClause,
+        askProsody.pitch,
+        askProsody.rate,
+        askProsody.volume,
+        false,
+      );
+    }
+  }
+
+  /** Enables audio if needed and auditions a specific emotion profile live (for Human-Tutor tuning). */
+  previewEmotion(emotion: VoiceEmotionId, customLine?: string): string {
+    this.enabled = true;
+    this.ensureContext();
+    const line = customLine?.trim() || VOICE_EMOTION_PROFILES[emotion].sampleLine;
+    this.speakDutchTutor(line, null, emotion, 0);
+    return line;
   }
 
   ensureContext(): void {
@@ -410,11 +504,27 @@ export class VocalTractFormantEngine {
    * Every single letter and word has its own unmistakable acoustic signature!
    * Returns a subtitle string (e.g. `🤪 "kjiuueehh!" (lip-pop!)`) for visual reinforcement.
    */
-  speakGraphemeOrWord(rawKey: string | null | undefined, mode: SpeakMode = 'CELEBRATE'): string {
+  speakGraphemeOrWord(
+    rawKey: string | null | undefined,
+    mode: SpeakMode = 'CELEBRATE',
+    options?: { readonly skipHumanSpeech?: boolean; readonly nextPromptLine?: string | null },
+  ): string {
     if (!this.enabled) return '';
     this.ensureContext();
     this.utteranceCount++;
+    this.suppressHumanSpeech = Boolean(options?.skipHumanSpeech);
+    try {
+      return this.speakGraphemeOrWordInner(rawKey, mode, options?.nextPromptLine);
+    } finally {
+      this.suppressHumanSpeech = false;
+    }
+  }
 
+  private speakGraphemeOrWordInner(
+    rawKey: string | null | undefined,
+    mode: SpeakMode,
+    nextPromptLine?: string | null,
+  ): string {
     const clean = String(rawKey || '').trim();
     const key = clean.toLowerCase();
     let subtitle: string;
@@ -1090,6 +1200,17 @@ export class VocalTractFormantEngine {
       }
     }
 
+    if (!this.suppressHumanSpeech && nextPromptLine) {
+      const askProsody = computeUtteranceProsody('CURIOUS_WONDER', this.emotionControls);
+      this.enqueueUtterance(
+        nextPromptLine,
+        askProsody.pitch,
+        askProsody.rate,
+        askProsody.volume,
+        false,
+      );
+    }
+
     this.lastPhoneticSubtitle = subtitle;
     return subtitle;
   }
@@ -1304,10 +1425,12 @@ export class VocalTractFormantEngine {
   }
 
   /**
-   * Gentle playful bump vocalization when a distractor bubble is tapped
+   * Gentle, non-punitive soft cushion vocalization when a distractor bubble is tapped
+   * (warm downward formant sigh instead of a scary growl!).
    */
   speakDistractorBump(_text = ''): void {
     if (!this.enabled) return;
-    this.playPreset('GRRRR');
+    this.utteranceCount++;
+    this.playEmotionGesture('SOOTHING_COMFORT', 0);
   }
 }

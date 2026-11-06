@@ -209,6 +209,29 @@
         </div>
       </div>
 
+      <!-- ROW A2: VOICE EMOTION & PROSODY PLAYGROUND (LIVE AFFECT PARAMETERS + 1-TAP AUDITION) -->
+      <div id="voiceEmotionBar" data-gui-id="GUI_VOICE_EMOTION_BAR" class="bg-slate-950 border border-slate-800 rounded-lg p-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div class="flex flex-wrap items-center gap-1">
+          <span class="text-xs font-bold text-purple-300 mono mr-0.5">🎭 EMOTIE:</span>
+          <button type="button" data-emo="WARM_ENCOURAGE" data-gui-id="GUI_EMO_WARM" class="emo-preview-btn ergo-sub-btn border-slate-700 text-amber-200">🥰 Warm</button>
+          <button type="button" data-emo="JOYFUL_SPARK" data-gui-id="GUI_EMO_JOY" class="emo-preview-btn ergo-sub-btn border-slate-700 text-emerald-200">🤩 Blij</button>
+          <button type="button" data-emo="PROUD_CELEBRATE" data-gui-id="GUI_EMO_PROUD" class="emo-preview-btn ergo-sub-btn border-slate-700 text-cyan-200">🏆 Trots</button>
+          <button type="button" data-emo="PLAYFUL_GIGGLE" data-gui-id="GUI_EMO_PLAYFUL" class="emo-preview-btn ergo-sub-btn border-slate-700 text-purple-200">🤭 Speels</button>
+          <button type="button" data-emo="SOOTHING_COMFORT" data-gui-id="GUI_EMO_SOOTHE" class="emo-preview-btn ergo-sub-btn border-slate-700 text-amber-100">💛 Troost</button>
+          <button type="button" data-emo="CURIOUS_WONDER" data-gui-id="GUI_EMO_CURIOUS" class="emo-preview-btn ergo-sub-btn border-slate-700 text-slate-200">🧐 Vraag</button>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 text-xs mono">
+          <label class="flex items-center gap-1 text-slate-300">
+            <span>Expressie:<b id="lblEmotionExpr" class="text-purple-300 ml-0.5">108%</b></span>
+            <input id="rngEmotionExpr" data-gui-id="GUI_EMOTION_EXPRESSIVENESS" type="range" min="50" max="150" value="108" style="width: 72px; accent-color: #c084fc;" />
+          </label>
+          <label class="flex items-center gap-1 text-slate-300">
+            <span>Tempo:<b id="lblEmotionRate" class="text-cyan-300 ml-0.5">96%</b></span>
+            <input id="rngEmotionRate" data-gui-id="GUI_EMOTION_RATE" type="range" min="80" max="115" value="96" style="width: 68px; accent-color: #22d3ee;" />
+          </label>
+        </div>
+      </div>
+
       <!-- ROW B & C: LIVE TUTOR TICKERS + ACCUMULATIVE CLIPBOARD BUFFER -->
       <div class="grid gap-2.5 shrink-0" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
         <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5 flex flex-col">

@@ -11,8 +11,9 @@ Touch-first psychomotor pointing, Fitts/Effective-Width ($W_e$) telemetry, forep
 1. Open **<https://springyworks.github.io/tillmanreader/>** in Chrome on Android.
 2. **Instant Launch:** Opens straight into **Tillmann Reader** (Stage 1/6) with zero developer clutter—the telemetry drawer stays tucked down at the bottom (`0: Play`).
 3. **First Touch Unlocks Voice & Fullscreen:** Your first touch inside the arena unlocks the zero-WAV WebAudio vocal-tract synthesizer (`"kjiuueehh!"`, `"buh-boing!"`, `"puh-POP!"`) and enters borderless fullscreen.
-4. **Anti-Fat-Finger (FFP) Scoop-Visor:** Place your thumb on the lower **Thumb Pad** and drag—the unobstructed **Optical Scoop Visor** floats above your finger so your thumb never hides the letters. Lift your finger over the target bubble to drop!
-5. **Inspect Live Telemetry Anytime:** Tap or swipe up the bottom bar (`1: Scopes` or `2: 100-Math`) to inspect the 4 real-time oscilloscopes, GUI Shannon $ID$ registry, and all 100 deterministic mathematical signature metrics while keeping the play arena visible.
+4. **Goal-Center Scoop-Visor (Zero Teleport):** The Scoop-Visor docks at the top **Goal Center** (`CANVAS_GOAL_CENTER_BOX`). Grab the lower **Thumb Pad** and drag smoothly 1:1—stray taps outside the pad pulse a friendly hint instead of snapping the visor across the screen.
+5. **Dutch Embedded Tutor & Emotion Voice (`🧑‍🏫 Tutor`):** Built-in child-paced ZPD tutor with non-repeating Dutch phrase decks, 6 affective voice profiles (`Warm`, `Blij`, `Trots`, `Speels`, `Troost`, `Vraag`), isolated grandchild nickname profiles (`👶 Beste leerling`), and accumulative `Ctrl+Alt+G` GUI/ticker clipboard feedback.
+6. **Inspect Live Telemetry Anytime:** Tap or swipe up the bottom bar (`1: Scopes` or `2: 100-Math`) to inspect the 4 real-time oscilloscopes, GUI Shannon $ID$ registry, and all 100 deterministic mathematical signature metrics while keeping the play arena visible.
 
 ---
 

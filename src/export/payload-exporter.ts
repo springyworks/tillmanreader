@@ -49,6 +49,8 @@ export class PayloadExporter {
       },
       embeddedTutor: {
         status: tutorStatus,
+        voiceEmotionControls: this.app.voiceEngine.emotionControls,
+        selectedDutchVoiceName: this.app.voiceEngine.nlVoice?.name ?? 'formant-synth-fallback',
         recentTickers: this.app.tutor.tickers,
       },
       humanTutorFeedback: {

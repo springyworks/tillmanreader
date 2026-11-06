@@ -1,5 +1,6 @@
 {
   "recommendations": [
+    "ms-edgedevtools.vscode-edge-devtools",
     "dbaeumer.vscode-eslint",
     "esbenp.prettier-vscode",
     "editorconfig.editorconfig",

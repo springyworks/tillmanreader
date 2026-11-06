@@ -219,9 +219,11 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
       await page.locator('#quickGuiCommentInput').press('Enter');
     }
 
-    // 3. Open small Human-Tutor button, react to a live Tutor Ticker, and create a grandchild profile
+    // 3. Open small Human-Tutor button, test Voice Emotion bar, react to a live Tutor Ticker, and create a grandchild profile
     await page.locator('#btnHumanTutor').click();
     await expect(page.locator('#humanTutorModal')).toBeVisible();
+    await expect(page.locator('#voiceEmotionBar')).toBeVisible();
+    await page.locator('[data-emo="PLAYFUL_GIGGLE"]').click();
     await page.locator('#tutorTickerList button').first().click();
 
     await page.locator('#learnerNicknameInput').fill('Sem');
