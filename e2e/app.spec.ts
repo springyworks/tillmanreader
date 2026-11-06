@@ -17,11 +17,17 @@ interface LabWindow {
   labApp?: {
     level: number;
     drawerState: number;
+    reading: { stage: number };
     telemetry: { trials: unknown[] };
-    persistence: { activeNickname: string; activeSlug: string };
+    persistence: {
+      activeNickname: string;
+      activeSlug: string;
+      previousSessionSummary: unknown;
+    };
     goalMemory: { calmFadeUnlocked: boolean; initialShowMs: number };
     tutor: {
       baselineHitsRemaining: number;
+      priorKnowledgeCalibrating: boolean;
       tickers: Array<{ seq: number; summary: string; kind: string }>;
     };
     activeMorphs: Array<{ r: number; semanticKey: string }>;
@@ -91,13 +97,19 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
     await expect(page.locator('#watchdogText')).toHaveText('0 ERR • 14/14 PASS');
     await expect(page.locator('#telemetryDrawer')).toHaveAttribute('data-state', '0');
     await expect(page.locator('#btnHumanTutor')).toBeVisible();
+    await expect(page.locator('#btnEraseDataMemory')).toBeVisible();
     await expect(page.locator('#btnPrevLevel')).toBeVisible();
     await expect(page.locator('#btnNextLevel')).toBeVisible();
+    await expect(page.locator('#btnLevelUp')).toBeVisible();
+    await expect(page.locator('#btnLevelDown')).toBeVisible();
+    await expect(page.locator('#tinyLevelIndicator')).toHaveText('L2');
 
     const viewportCheck = await page.evaluate(() => {
       const header = document.getElementById('topHeader')?.getBoundingClientRect();
       const prevBtn = document.getElementById('btnPrevLevel')?.getBoundingClientRect();
       const nextBtn = document.getElementById('btnNextLevel')?.getBoundingClientRect();
+      const stepper = document.getElementById('topLeftLevelStepper')?.getBoundingClientRect();
+      const eraseBtn = document.getElementById('btnEraseDataMemory')?.getBoundingClientRect();
       const arena = document.getElementById('arenaContainer')?.getBoundingClientRect();
       const drawer = document.getElementById('telemetryDrawer')?.getBoundingClientRect();
       const handleGrip = document
@@ -105,7 +117,19 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
         ?.getBoundingClientRect();
       const win = window as unknown as LabWindow;
       const app = win.labApp;
-      if (!header || !prevBtn || !nextBtn || !arena || !drawer || !handleGrip || !app) return null;
+      if (
+        !header ||
+        !prevBtn ||
+        !nextBtn ||
+        !stepper ||
+        !eraseBtn ||
+        !arena ||
+        !drawer ||
+        !handleGrip ||
+        !app
+      ) {
+        return null;
+      }
       const goalRect = app.arenaRenderer.lastGoalCenterRect;
       const t = app.target;
 
@@ -120,7 +144,12 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
         prevLeft: prevBtn.left,
         nextLeft: nextBtn.left,
         nextRight: nextBtn.right,
-        arrowsSameRow: Math.abs(prevBtn.top - nextBtn.top) <= 4,
+        stepperLeft: stepper.left,
+        stepperRight: stepper.right,
+        eraseVisibleInBottomBar:
+          eraseBtn.top >= drawer.top - 2 && eraseBtn.bottom <= drawer.bottom + 2,
+        arrowsSameRow:
+          Math.abs(prevBtn.top - nextBtn.top) <= 4 && Math.abs(prevBtn.top - stepper.top) <= 6,
         arenaHeight: arena.height,
         drawerBottom: drawer.bottom,
         drawerRight: drawer.right,
@@ -150,10 +179,12 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
     expect(viewportCheck?.trialCount).toBe(0);
     expect(viewportCheck?.calmFadeUnlocked).toBe(false);
     expect(viewportCheck?.activeNickname).toBe('Beste leerling');
-    // Both ◀ and ▶ are side-by-side at top-left!
+    // Both ◀ and ▶ are side-by-side at top-left, with ▲/▼ level stepper directly to their right!
     expect(viewportCheck?.arrowsSameRow).toBe(true);
     expect(viewportCheck?.nextLeft).toBeGreaterThan(viewportCheck?.prevLeft ?? 0);
-    expect(viewportCheck?.nextRight).toBeLessThan((viewportCheck?.vw ?? 0) * 0.62);
+    expect(viewportCheck?.stepperLeft).toBeGreaterThanOrEqual((viewportCheck?.nextRight ?? 0) - 1);
+    expect(viewportCheck?.stepperRight).toBeLessThan((viewportCheck?.vw ?? 0) * 0.65);
+    expect(viewportCheck?.eraseVisibleInBottomBar).toBe(true);
     expect(viewportCheck?.arenaHeight).toBeGreaterThan(150);
     expect(viewportCheck?.drawerBottom).toBeLessThanOrEqual((viewportCheck?.vh ?? 0) + 1);
     expect(viewportCheck?.drawerRight).toBeLessThanOrEqual((viewportCheck?.vw ?? 0) + 1);
@@ -316,5 +347,76 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
       return html.includes('id="bakedTillmannState"') && html.endsWith('</html>');
     });
     expect(standaloneOk).toBe(true);
+  });
+
+  test('steps levels via tiny ▲/▼ arrows, erases webpage memory via bottom service button & fast-forwards prior knowledge on ms dynamics', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await expect(page.locator('#tinyLevelIndicator')).toHaveText('L2');
+
+    // Step UP with tiny ▲ arrow: L2 -> L3 -> S1 -> S2
+    await page.locator('#btnLevelUp').click();
+    await expect(page.locator('#tinyLevelIndicator')).toHaveText('L3');
+    await page.locator('#btnLevelUp').click();
+    await expect(page.locator('#tinyLevelIndicator')).toHaveText('S1');
+    await page.locator('#btnLevelUp').click();
+    await expect(page.locator('#tinyLevelIndicator')).toHaveText('S2');
+
+    // Step DOWN with tiny ▼ arrow: S2 -> S1 -> L3 -> L2 -> 1B
+    await page.locator('#btnLevelDown').click();
+    await expect(page.locator('#tinyLevelIndicator')).toHaveText('S1');
+    await page.locator('#btnLevelDown').click();
+    await expect(page.locator('#tinyLevelIndicator')).toHaveText('L3');
+    await page.locator('#btnLevelDown').click();
+    await expect(page.locator('#tinyLevelIndicator')).toHaveText('L2');
+    await page.locator('#btnLevelDown').click();
+    await expect(page.locator('#tinyLevelIndicator')).toHaveText('1B');
+
+    // Score a trial first, then erase webpage data-memory via bottom service button
+    await page.locator('#btnLevelUp').click(); // back to L2
+    const c0 = await readDragCoords(page);
+    expect(c0).not.toBeNull();
+    if (!c0) return;
+    await performScoopDragToTarget(page, c0);
+
+    await page.locator('#btnEraseDataMemory').click();
+    await expect(page.locator('#serviceEraseModal')).toBeVisible();
+    await page.locator('#btnConfirmEraseMemory').click();
+    await expect(page.locator('#serviceEraseModal')).toBeHidden();
+
+    const afterErase = await page.evaluate(() => {
+      const app = (window as unknown as LabWindow).labApp;
+      return app
+        ? {
+            trials: app.telemetry.trials.length,
+            prevSummary: app.persistence.previousSessionSummary,
+            calibrating: app.tutor.priorKnowledgeCalibrating,
+            level: app.level,
+          }
+        : null;
+    });
+    expect(afterErase?.trials).toBe(0);
+    expect(afterErase?.prevSummary).toBeNull();
+    expect(afterErase?.calibrating).toBe(true);
+    expect(afterErase?.level).toBe(2);
+
+    // Step into S1 via ▲ twice (L2 -> L3 -> S1) and perform 2 fluent drags:
+    // Millisecond prior-knowledge pickup must jump stage above S1 automatically!
+    await page.locator('#btnLevelUp').click();
+    await page.locator('#btnLevelUp').click();
+    await expect(page.locator('#tinyLevelIndicator')).toHaveText('S1');
+
+    for (let i = 0; i < 2; i++) {
+      const rc = await readDragCoords(page);
+      expect(rc).not.toBeNull();
+      if (!rc) return;
+      await performScoopDragToTarget(page, rc);
+    }
+
+    const jumpedStage = await page.evaluate(
+      () => (window as unknown as LabWindow).labApp?.reading.stage ?? 0,
+    );
+    expect(jumpedStage).toBeGreaterThanOrEqual(2);
   });
 });

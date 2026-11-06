@@ -132,6 +132,83 @@ export class LevelFlow {
     this.applyStepIndex(this.app.currentStepIdx, false);
   }
 
+  /** Unified 10-rung curriculum index (`0=1A, 1=1B, 2=L2, 3=L3, 4=S1 .. 9=S6`). */
+  getUnifiedRung(): number {
+    if (this.app.currentStepIdx < 4) {
+      return Math.max(0, Math.min(3, this.app.currentStepIdx));
+    }
+    return 3 + Math.max(1, Math.min(6, this.app.reading.stage));
+  }
+
+  /** Short badge code (`1A`, `1B`, `L2`, `L3`, `S1`..`S6`) for the top-left tiny level stepper. */
+  getShortLevelCode(): string {
+    const rung = this.getUnifiedRung();
+    const codes = ['1A', '1B', 'L2', 'L3', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6'];
+    return codes[rung] ?? 'L2';
+  }
+
+  /**
+   * Compact `▲` / `▼` Level Up & Down Stepper (right of `◀` / `▶`):
+   * Steps strictly up (`+1`) or down (`-1`) across the 10 curriculum rungs (`1A`..`S6`) without wrapping.
+   */
+  stepCurriculumRung(delta: 1 | -1): void {
+    const prevRung = this.getUnifiedRung();
+    const nextRung = Math.max(0, Math.min(9, prevRung + delta));
+    if (nextRung === prevRung) {
+      this.app.hud.showToast(
+        delta > 0 ? '🔝 HOOGSTE LEVEL (S6)' : '🛡️ LAAGSTE BASISLEVEL (1A)',
+        delta > 0
+          ? 'Je zit al op Leesstap 6/6.'
+          : 'Je zit al op de meest elementaire basisoefening (1A Pulse Tap).',
+        'border-amber-400',
+      );
+      return;
+    }
+
+    this.app.tutor.calmStreak = 0;
+    this.app.tutor.stageHitStreak = 0;
+    this.app.tutor.fluentProbeStreak = 0;
+    this.app.tutor.consecutiveMisses = 0;
+    this.app.tutor.temporaryStepBackTargetStage = null;
+    this.app.goalMemory.stageUnfadedStreak = 0;
+    this.app.goalMemory.calmFadeUnlocked = false;
+    this.app.goalMemory.revealAlpha = 1.0;
+
+    if (nextRung < 4) {
+      if (nextRung === 2) {
+        this.app.tutor.startBaselineSession(2, true);
+      } else {
+        this.app.tutor.baselineHitsRemaining = 0;
+        this.app.tutor.isPeriodicBaselineCheck = false;
+      }
+      this.applyStepIndex(nextRung, false, true);
+    } else {
+      this.app.tutor.baselineHitsRemaining = 0;
+      this.app.tutor.isPeriodicBaselineCheck = false;
+      this.app.groundingComplete = true;
+      this.app.reading.stage = nextRung - 3;
+      this.applyStepIndex(4, false, true);
+    }
+
+    const code = this.getShortLevelCode();
+    const label =
+      nextRung >= 4
+        ? `Leesstap ${this.app.reading.stage}/6 (${this.app.reading.getCurrentStageConfig().name.split(':')[1].trim()})`
+        : (this.app.levelSteps[nextRung]?.badge.split('•')[1]?.trim() ?? code);
+    this.app.tutor.logExternalEvent(
+      delta > 0 ? 'PROMOTE' : 'STEP_BACK',
+      code,
+      `Handmatige level-stap (${delta > 0 ? '▲ omhoog' : '▼ omlaag'}) → ${code}: ${label}.`,
+      null,
+      `rung=${nextRung + 1}/10`,
+    );
+    this.app.hud.showToast(
+      `${delta > 0 ? '⬆️ LEVEL OMHOOG' : '⬇️ LEVEL OMLAAG'} → ${code}`,
+      label,
+      delta > 0 ? 'border-emerald-400' : 'border-cyan-400',
+    );
+  }
+
   applyStepIndex(idx: number, fromAutoTutor = false, silentPrompt = false) {
     this.app.currentStepIdx = Math.max(0, Math.min(this.app.levelSteps.length - 1, idx));
     if (!fromAutoTutor) {
@@ -204,6 +281,8 @@ export class LevelFlow {
     }
     const learnerLbl = maybeById('learnerNameLabel');
     if (learnerLbl) learnerLbl.textContent = this.app.persistence.activeNickname;
+    const tinyLvl = maybeById('tinyLevelIndicator');
+    if (tinyLvl) tinyLvl.textContent = this.getShortLevelCode();
     const tutorCountLbl = maybeById('btnHumanTutorBadge');
     if (tutorCountLbl) {
       const entryCount = this.app.feedback.entries.length;

@@ -18,13 +18,21 @@
 
   <!-- KID-CLEAN TOP BAR: TOP-LEFT DUAL ARROWS (◀ ▶ ALWAYS PRESENT), STAGE BADGE & RIGHT AUDIO/FULLSCREEN -->
   <header id="topHeader" data-gui-id="GUI_TOP_HEADER" data-gui-label="Top Kid Navigation Header" class="shrink-0 bg-slate-950 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between gap-2 z-30">
-    <div id="topLeftNavArrows" data-gui-id="GUI_TOP_LEFT_ARROWS" data-gui-label="Top-Left Safety Step-Back &amp; Forward Arrows" class="flex items-center gap-1.5 shrink-0">
+    <div id="topLeftNavArrows" data-gui-id="GUI_TOP_LEFT_ARROWS" data-gui-label="Top-Left Safety Step-Back, Forward &amp; Tiny Level Up/Down Arrows" class="flex items-center gap-1.5 shrink-0">
       <button id="btnPrevLevel" data-gui-id="GUI_NAV_PREV" data-gui-label="Safety Step-Back Arrow (Top-Left)" class="hero-nav-btn" title="Stapje terug / Veilige terug-knop (Shortcut: [ of PageUp)">
         <span>◀</span><span>TERUG</span>
       </button>
       <button id="btnNextLevel" data-gui-id="GUI_NAV_NEXT" data-gui-label="Step-Forward Arrow (Top-Left)" class="hero-nav-btn next-hero" title="Stapje vooruit (Shortcut: ] of PageDown)">
         <span>VOORUIT</span><span>▶</span>
       </button>
+      <!-- TWO TINY UP & DOWN ARROWS RIGHT OF THE ARROW KEYS TO STEP LEVELS (1A..L3..S1..S6) -->
+      <div id="topLeftLevelStepper" data-gui-id="GUI_LEVEL_STEPPER" data-gui-label="Tiny Level Up/Down Stepper (Right of Arrow Keys)" class="tiny-lvl-stepper" title="Level hoger (▲) of lager (▼) stappen (Shortcut: Alt+↑ / Alt+↓)">
+        <div class="tiny-lvl-arrows">
+          <button id="btnLevelUp" data-gui-id="GUI_LEVEL_UP" data-gui-label="Tiny Level Up Arrow (▲)" type="button" class="tiny-lvl-btn" title="Level omhoog (Alt+Pijl Omhoog)">▲</button>
+          <button id="btnLevelDown" data-gui-id="GUI_LEVEL_DOWN" data-gui-label="Tiny Level Down Arrow (▼)" type="button" class="tiny-lvl-btn" title="Level omlaag (Alt+Pijl Omlaag)">▼</button>
+        </div>
+        <span id="tinyLevelIndicator" data-gui-id="GUI_TINY_LEVEL_BADGE" data-gui-label="Current Level Short Code" class="tiny-lvl-badge mono">L2</span>
+      </div>
     </div>
 
     <div class="flex flex-col min-w-0 flex-1 overflow-hidden px-2" style="text-align:center;">
@@ -144,6 +152,27 @@
             🚀 TEST BORDERLESS POP-OUT RIGHT NOW
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SERVICE MODAL: ERASE WEBPAGE DATA-MEMORY & RE-ARM MILLISECOND PRIOR-KNOWLEDGE CALIBRATION -->
+  <div id="serviceEraseModal" data-gui-id="GUI_SERVICE_ERASE_MODAL" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3" style="background: rgba(2, 6, 23, 0.86); backdrop-filter: blur(8px);">
+    <div class="bg-slate-900 border-2 border-rose-500 rounded-xl p-4 w-full shadow-xl space-y-2.5" style="max-width: 480px;">
+      <div class="flex flex-wrap items-center justify-between gap-1.5">
+        <span class="px-2 py-0.5 rounded bg-rose-500 text-slate-950 text-xs font-bold mono">🧹 SERVICE: WIS GEHEUGEN</span>
+        <span id="eraseModalMemorySummary" class="text-xs text-amber-300 mono">Sessie #1 • 0 trials</span>
+      </div>
+      <p class="text-xs text-slate-200 leading-snug">
+        Wil je het volledige <b>data-geheugen in deze webpagina</b> wissen?
+      </p>
+      <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-300 space-y-1">
+        <p class="text-rose-300">⚠️ <b>Let op:</b> Langetermijn-vergelijking over eerdere sessies gaat verloren.</p>
+        <p class="text-emerald-300">⚡ <b>Slimme Tutor Herkalibratie:</b> De ingebouwde tutor meet op <i>milliseconde-detail</i> het huidige kennisniveau en stapt vanzelf levels omhoog (voorkennis) of terug naar basisoefeningen.</p>
+      </div>
+      <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
+        <button id="btnCancelEraseMemory" data-gui-id="GUI_CANCEL_ERASE_MEMORY" type="button" class="ergo-sub-btn border-slate-600 text-slate-300">✕ Annuleer</button>
+        <button id="btnConfirmEraseMemory" data-gui-id="GUI_CONFIRM_ERASE_MEMORY" type="button" class="hero-nav-btn" style="min-height:38px;font-size:12.5px;padding:5px 14px;border-color:#f43f5e;background:linear-gradient(135deg,#be123c,#0f172a);color:#ffe4e6;">🗑️ Wis Geheugen &amp; Herkalibreer</button>
       </div>
     </div>
   </div>
@@ -285,10 +314,13 @@
           👶 <span id="learnerNameLabel">Beste leerling</span>
         </button>
       </div>
-      <!-- Right: Compact Human-Tutor Button + Copy JSON + Standalone Export + GitHub Deploy + 3-State Buttons -->
+      <!-- Right: Service Erase Memory + Compact Human-Tutor Button + Copy JSON + Standalone Export + GitHub Deploy + 3-State Buttons -->
       <div class="flex items-center gap-1.5 shrink-0" id="drawerStateBtns">
+        <button id="btnEraseDataMemory" data-gui-id="GUI_SERVICE_ERASE_MEMORY" data-gui-label="Bottom Service Button: Erase Webpage Data-Memory" type="button" class="ergo-sub-btn border-rose-500 text-rose-300" style="min-height:28px;padding:2px 7px;font-size:11px;background:rgba(190,18,60,0.2);" title="Service: Wis webpagina data-geheugen &amp; herkalibreer op milliseconde-dynamiek">
+          🧹 <span class="erase-lbl">Wis Data</span>
+        </button>
         <button id="btnHumanTutor" data-gui-id="GUI_HUMAN_TUTOR_BTN" data-gui-label="Small Human-Tutor Ticker &amp; Accumulative Clipboard Button" type="button" class="ergo-sub-btn border-purple-400 text-purple-200" style="min-height:28px;padding:2px 7px;font-size:11px;background:rgba(147,51,234,0.25);" title="Open Live Tutor Tickers &amp; Accumulative Feedback (Shortcut: Ctrl+Alt+G)">
-          🧑‍🏫 Tutor <span id="btnHumanTutorBadge" class="px-1 rounded bg-purple-400 text-slate-950 font-bold mono" style="font-size:10px;">1</span>
+          🧑‍🏫 <span class="tutor-lbl">Tutor</span> <span id="btnHumanTutorBadge" class="px-1 rounded bg-purple-400 text-slate-950 font-bold mono" style="font-size:10px;">1</span>
         </button>
         <button id="btnTopSavedJson" data-gui-id="GUI_TOP_COPY_JSON" data-gui-label="Inspect Auto-Save &amp; Copy JSON to Clipboard" class="ergo-sub-btn border-emerald-400 text-emerald-300" style="min-height:28px;padding:2px 8px;font-size:11px;background:rgba(16,185,129,0.22);">💾 Beste leerling (0tr) • 📋 JSON</button>
         <button id="btnStandaloneExport" data-gui-id="GUI_STANDALONE_HTML" data-gui-label="Download index.html for GitHub Pages" class="ergo-sub-btn border-cyan-400 text-cyan-300" style="min-height:28px;padding:2px 8px;font-size:11px;">

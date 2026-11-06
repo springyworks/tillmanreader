@@ -138,6 +138,20 @@ export class HitProcessor {
 
     if (this.app.tutor.baselineHitsRemaining > 0) {
       const baseOut = this.app.tutor.recordBaselineHit(mt, normRadiusPct);
+      if (baseOut.retrainBasicStepIdx !== null) {
+        this.app.phaseProgress = 0;
+        this.app.flow.applyStepIndex(baseOut.retrainBasicStepIdx, true, true);
+        const retrainMsg =
+          baseOut.dutchSpeech ||
+          'Laten we eerst even met één groot krimp-rondje in het midden oefenen!';
+        this.app.hud.showToast(
+          '🛡️ BASIS-MIKKEN OEFENEN (KRIMP-CIRKEL)',
+          retrainMsg,
+          'border-amber-400',
+        );
+        this.app.voiceEngine.speakDutchTutor(retrainMsg, null, baseOut.voiceEmotion, 0.16);
+        return;
+      }
       if (baseOut.completed) {
         this.app.groundingComplete = true;
         this.app.phaseProgress = 0;
@@ -238,7 +252,7 @@ export class HitProcessor {
       this.app.moveOnsetTime > this.app.trialStartTime
         ? Math.max(70, Math.round(this.app.moveOnsetTime - this.app.trialStartTime - hw))
         : Math.round(Math.min(mt * 0.42, this.app.telemetry.rt0BaselineMs + 160));
-    const pull = this.distractorPull();
+    const pull = this.distractorPull(rt);
     const radialNormPct = Math.min(1.0, Math.hypot(x - rt.x, y - rt.y) / Math.max(8, rt.r));
 
     const prevAuto = this.app.reading.autoZPD;
@@ -288,22 +302,50 @@ export class HitProcessor {
         y,
         now,
         outcome.stageChanged,
+        outcome.ticker.kind === 'PRIOR_KNOWLEDGE_JUMP',
         outcome.dutchCoachLine,
         outcome.voiceEmotion,
       );
     } else {
-      this.bumpDistractor(rt, outcome.stageChanged, outcome.dutchCoachLine, outcome.voiceEmotion);
+      this.bumpDistractor(
+        rt,
+        outcome.stageChanged,
+        outcome.retrainBasicStepIdx,
+        outcome.dutchCoachLine,
+        outcome.voiceEmotion,
+      );
     }
   }
 
-  /** Largest pull (px of overlap with the 95 px halo) the recent trail showed towards any distractor. */
-  private distractorPull(): number {
+  /**
+   * True lateral pull (px) toward any distractor beyond the straight `trialStartPos -> target` corridor.
+   * Passing by a distractor that simply lies along the straight path to the target counts as 0px pull.
+   */
+  private distractorPull(target: ReadingTarget): number {
     let maxPull = 0;
+    const sx = this.app.trialStartPos.x;
+    const sy = this.app.trialStartPos.y;
+    const dx = target.x - sx;
+    const dy = target.y - sy;
+    const segLenSq = dx * dx + dy * dy;
     const distractors = this.app.readingTargets.filter((item) => !item.isTarget);
-    for (const p of this.app.trail.slice(-25)) {
-      for (const distItem of distractors) {
+
+    for (const distItem of distractors) {
+      let chordDist = Math.hypot(distItem.x - sx, distItem.y - sy);
+      if (segLenSq > 1) {
+        const t = Math.max(
+          0,
+          Math.min(1, ((distItem.x - sx) * dx + (distItem.y - sy) * dy) / segLenSq),
+        );
+        chordDist = Math.hypot(distItem.x - (sx + t * dx), distItem.y - (sy + t * dy));
+      }
+      const baselineCorridorOverlap = Math.max(0, 95 - chordDist);
+      for (const p of this.app.trail.slice(-25)) {
         const distD = Math.hypot(p.x - distItem.x, p.y - distItem.y);
-        if (distD < 95) maxPull = Math.max(maxPull, 95 - distD);
+        if (distD < 95) {
+          const lateralPull = Math.max(0, 95 - distD - baselineCorridorOverlap);
+          maxPull = Math.max(maxPull, lateralPull);
+        }
       }
     }
     return maxPull;
@@ -315,6 +357,7 @@ export class HitProcessor {
     y: number,
     now: number,
     stageChanged: 'PROMOTED' | 'STEPPED_BACK' | 'RETURNED_UP' | 'STEADY',
+    isPriorKnowledgeJump: boolean,
     dutchCoachLine: string | null,
     voiceEmotion: VoiceEmotionId,
   ): void {
@@ -402,7 +445,9 @@ export class HitProcessor {
 
     if (stageChanged === 'PROMOTED') {
       this.app.hud.showToast(
-        `🎉 KNAP GELEZEN! DOOR NAAR STAP ${this.app.reading.stage}/6!`,
+        isPriorKnowledgeJump
+          ? `⚡ VOORKENNIS HERKEND → STAP ${this.app.reading.stage}/6!`
+          : `🎉 KNAP GELEZEN! DOOR NAAR STAP ${this.app.reading.stage}/6!`,
         effectiveCoachLine || this.app.reading.getCurrentStageConfig().name,
         'border-emerald-400',
       );
@@ -425,6 +470,7 @@ export class HitProcessor {
   private bumpDistractor(
     rt: ReadingTarget,
     stageChanged: 'PROMOTED' | 'STEPPED_BACK' | 'RETURNED_UP' | 'STEADY',
+    retrainBasicStepIdx: number | null,
     dutchCoachLine: string | null,
     voiceEmotion: VoiceEmotionId,
   ): void {
@@ -432,6 +478,20 @@ export class HitProcessor {
     this.app.voiceEngine.speakDistractorBump(rt.text);
     gm.revealAlpha = 1.0;
     this.app.layout.resetScoopVisorPosition();
+
+    if (retrainBasicStepIdx !== null) {
+      this.app.flow.applyStepIndex(retrainBasicStepIdx, true, true);
+      const basicMsg =
+        dutchCoachLine ||
+        'Kom, we doen eerst even twee ontspannen groene basis-rondjes op het scherm!';
+      this.app.hud.showToast(
+        '🛡️ EVEN TERUG NAAR DE BASIS (2 GROENE RONDJES)',
+        basicMsg,
+        'border-cyan-400',
+      );
+      this.app.voiceEngine.speakDutchTutor(basicMsg, null, voiceEmotion, 0.22);
+      return;
+    }
 
     if (stageChanged === 'STEPPED_BACK') {
       this.app.spawner.spawnForCurrentLevel(true);

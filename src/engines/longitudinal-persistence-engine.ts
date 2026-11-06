@@ -312,7 +312,49 @@ export class LongitudinalPersistenceEngine {
     }
     this.sessionNumber = 1;
     this.previousSessionSummary = null;
-    this.progressionDeltaReport = `${this.activeNickname} • Vers profiel`;
+    this.progressionDeltaReport = `${this.activeNickname} • Vers profiel (live ms-kalibratie)`;
+  }
+
+  /**
+   * Full Webpage Data-Memory Service Wipe:
+   * Removes all saved `TILLMANN_*` keys, checkpoints, longitudinal comparisons and baked state in the browser.
+   * Long-term session-to-session comparison is intentionally reset so the Embedded Tutor re-calibrates
+   * strictly from the pupil's live millisecond movement & reading dynamics.
+   */
+  eraseAllWebpageDataMemory(): number {
+    let removedKeys = 0;
+    this.memoryFallbackStore.clear();
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('TILLMANN_')) {
+          keysToRemove.push(k);
+        }
+      }
+      for (const k of keysToRemove) {
+        localStorage.removeItem(k);
+        removedKeys++;
+      }
+    } catch {
+      // Ignore storage access errors in restricted sandboxes.
+    }
+    try {
+      delete window.__BAKED_TILLMANN_STATE__;
+    } catch {
+      // Ignore if non-configurable.
+    }
+    this.profiles = [...DEFAULT_PROFILES];
+    this.activeSlug = 'beste_leerling';
+    this.activeNickname = 'Beste leerling';
+    this.sessionNumber = 1;
+    this.previousSessionSummary = null;
+    this.returnGapMinutes = 0;
+    this.morphRewardDwellMs = 0;
+    this.progressionDeltaReport =
+      'Geheugen gewist (geen langetermijn-historie) • Live ms-kalibratie actief';
+    this.showStatus('🧹 Geheugen gewist (0tr • ms-probe)', 0);
+    return removedKeys;
   }
 
   private snapshotProgress(host: SessionHost): ProgressSnapshot {

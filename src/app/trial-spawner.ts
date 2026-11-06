@@ -24,6 +24,7 @@ export class TrialSpawner {
     this.app.currentTrialDockMs = 0;
     this.app.currentTrialGesture = null;
     this.app.gesture.samples = [];
+    this.app.trail = [];
     this.app.goalMemory.trialPeekCount = 0;
     this.app.goalMemory.trialHoverMs = 0;
     this.app.goalMemory.isHoveringTopGoal = false;

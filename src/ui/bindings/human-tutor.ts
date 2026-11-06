@@ -79,7 +79,10 @@ export function renderHumanTutorModal(app: LabApp): void {
     const voiceName = app.voiceEngine.nlVoice?.name
       ? app.voiceEngine.nlVoice.name.replace(/Microsoft |Online |\(Natural\) - .*/g, '').trim()
       : 'Formant+TTS';
-    liveEl.textContent = `Leerling: "${status.learnerName}" • Stem: ${voiceName} [${emoBadge}] • Doel: ${fadeDesc} • Comfort: ${status.steeringComfortPct}%`;
+    const probeTag = status.priorKnowledgeCalibrating
+      ? `⚡ Voorkennis-probe actief (${status.fluentProbeStreak}/2)`
+      : `🎯 Op huidig kennis-pad (+lex=${status.lastLexicalOverheadMs}ms)`;
+    liveEl.textContent = `Leerling: "${status.learnerName}" • ${probeTag} • Stem: ${voiceName} [${emoBadge}] • Doel: ${fadeDesc} • Comfort: ${status.steeringComfortPct}%`;
   }
 
   // Sync Emotion Sliders & Active Emotion Highlight

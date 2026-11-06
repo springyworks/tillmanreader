@@ -324,6 +324,8 @@ export class LabApp {
     } else {
       this.tutor.learnerName = this.persistence.activeNickname;
       this.tutor.calmStreak = this.goalMemory.stageUnfadedStreak;
+      this.tutor.priorKnowledgeCalibrating =
+        this.reading.stage === 1 && this.telemetry.trials.length < 6;
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('mode') !== 'lab') {
         // Always open standard URL on Level 2 Tillmann Hit-Test to establish fresh screen baseline
@@ -478,8 +480,42 @@ export class LabApp {
     }
   }
 
+  /**
+   * Erases all webpage data-memory (`localStorage`, checkpoints, longitudinal comparisons) and
+   * arms live millisecond prior-knowledge calibration from the opening baseline onwards.
+   */
+  eraseAllWebpageMemoryAndRecalibrate(): number {
+    const removed = this.persistence.eraseAllWebpageDataMemory();
+    this.feedback.clear();
+    this.tutor.tickers.length = 0;
+    this.resetFreshLearnerState();
+    this.tutor.armPriorKnowledgeCalibration();
+    const speech =
+      'Webpagina-geheugen gewist! We kijken nu live op milliseconde-detail wat je al kent en passen het level meteen aan.';
+    this.tutor.logExternalEvent(
+      'WELCOME',
+      'L2-Reset',
+      `Service-wis uitgevoerd (${removed} sleutels gewist; langetermijn-vergelijking gereset) — live ms-voorkenniskalibratie actief!`,
+      speech,
+      'history=CLEARED • ms-probe=ON',
+      'CURIOUS_WONDER',
+    );
+    this.persistence.saveToBrowser(this);
+    this.flow.syncStageUI();
+    this.spawner.spawnForCurrentLevel(true);
+    this.computeSignature();
+    if (this.voiceEngine.enabled && this.firstTouchUnlocked) {
+      this.voiceEngine.speakDutchTutor(speech, null, 'CURIOUS_WONDER');
+    }
+    return removed;
+  }
+
   stepLevel(delta: number) {
     return this.flow.stepLevel(delta);
+  }
+
+  stepCurriculumRung(delta: 1 | -1) {
+    return this.flow.stepCurriculumRung(delta);
   }
 
   applyStepIndex(idx: number, fromAutoTutor = false) {

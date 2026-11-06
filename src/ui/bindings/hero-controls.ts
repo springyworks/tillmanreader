@@ -8,6 +8,20 @@ export function bindHeroControls(app: LabApp): void {
   byId('btnPrevLevel').addEventListener('click', () => app.flow.stepLevel(-1));
   byId('btnNextLevel').addEventListener('click', () => app.flow.stepLevel(1));
 
+  // Tiny Level Up (▲) / Down (▼) Stepper right of the top-left arrow keys
+  onClick('btnLevelUp', () => app.flow.stepCurriculumRung(1), { stopPropagation: true });
+  onClick('btnLevelDown', () => app.flow.stepCurriculumRung(-1), { stopPropagation: true });
+  window.addEventListener('keydown', (e) => {
+    if (!e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      app.flow.stepCurriculumRung(1);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      app.flow.stepCurriculumRung(-1);
+    }
+  });
+
   // Giant Top Fullscreen & Borderless Breakout Button
   onClick(
     'btnFullscreen',

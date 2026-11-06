@@ -264,4 +264,164 @@ describe('EmbeddedTutorEngine', () => {
     expect(plans.some((p) => p.targetCount === 2)).toBe(true);
     expect(plans.some((p) => p.distractorCount === 4)).toBe(true);
   });
+
+  it('picks up prior knowledge at millisecond detail after memory reset and locks onto the present-knowledge frontier', () => {
+    const tutor = new EmbeddedTutorEngine();
+    tutor.resetForLearner('Eva');
+    tutor.armPriorKnowledgeCalibration();
+    expect(tutor.priorKnowledgeCalibrating).toBe(true);
+
+    // 2 ultra-automatic sight-recognition hits on Stage 1 -> jumps straight to Stage 3 (2-letter words)
+    const s1a = tutor.evaluateReadingTrial(
+      {
+        hit: true,
+        readingStage: 1,
+        mtMs: 1220,
+        decodeMs: 540,
+        distractorPullPx: 6,
+        radialNormPct: 0.22,
+        goalPeeks: 0,
+        targetLabel: 'A',
+      },
+      true,
+      'AUTO_PROG',
+      720,
+      3,
+      1.15,
+    );
+    expect(s1a.nextStage).toBe(1);
+
+    const s1b = tutor.evaluateReadingTrial(
+      {
+        hit: true,
+        readingStage: 1,
+        mtMs: 1180,
+        decodeMs: 510,
+        distractorPullPx: 5,
+        radialNormPct: 0.19,
+        goalPeeks: 0,
+        targetLabel: 'M',
+      },
+      true,
+      'AUTO_PROG',
+      720,
+      4,
+      1.15,
+    );
+    expect(s1b.stageChanged).toBe('PROMOTED');
+    expect(s1b.ticker.kind).toBe('PRIOR_KNOWLEDGE_JUMP');
+    expect(s1b.nextStage).toBe(3);
+    expect(tutor.priorKnowledgeCalibrating).toBe(true);
+
+    // 2 fluent hits on Stage 3 -> steps up to Stage 4
+    tutor.evaluateReadingTrial(
+      {
+        hit: true,
+        readingStage: 3,
+        mtMs: 1890,
+        decodeMs: 740,
+        distractorPullPx: 14,
+        radialNormPct: 0.31,
+        goalPeeks: 0,
+        targetLabel: 'ik',
+      },
+      true,
+      'AUTO_PROG',
+      720,
+      5,
+      1.15,
+    );
+    const s3b = tutor.evaluateReadingTrial(
+      {
+        hit: true,
+        readingStage: 3,
+        mtMs: 1940,
+        decodeMs: 760,
+        distractorPullPx: 16,
+        radialNormPct: 0.28,
+        goalPeeks: 0,
+        targetLabel: 'op',
+      },
+      true,
+      'AUTO_PROG',
+      720,
+      6,
+      1.15,
+    );
+    expect(s3b.nextStage).toBe(4);
+    expect(s3b.ticker.kind).toBe('PRIOR_KNOWLEDGE_JUMP');
+
+    // On Stage 4, pupil takes 4.1s to decode -> locks onto present-knowledge frontier (stops fast-jumping!)
+    const frontierHit = tutor.evaluateReadingTrial(
+      {
+        hit: true,
+        readingStage: 4,
+        mtMs: 4100,
+        decodeMs: 1520,
+        distractorPullPx: 38,
+        radialNormPct: 0.4,
+        goalPeeks: 0,
+        targetLabel: 'bos',
+      },
+      true,
+      'AUTO_PROG',
+      720,
+      7,
+      1.15,
+    );
+    expect(frontierHit.nextStage).toBe(4);
+    expect(tutor.priorKnowledgeCalibrating).toBe(false);
+  });
+
+  it('steps back to retrain more basic skills when Stage 1 or Level 2 motor dynamics show strain', () => {
+    const tutor = new EmbeddedTutorEngine();
+    tutor.resetForLearner('Mila');
+
+    // 2 consecutive slow rim-graze struggles on Level 2 -> steps back to Level 1B Shrinking Circle (stepIdx 1)
+    const slow1 = tutor.recordBaselineHit(6800, 0.84);
+    expect(slow1.retrainBasicStepIdx).toBeNull();
+    const slow2 = tutor.recordBaselineHit(6950, 0.88);
+    expect(slow2.retrainBasicStepIdx).toBe(1);
+    expect(slow2.voiceEmotion).toBe('SOOTHING_COMFORT');
+
+    // 2 misses on Reading Stage 1 -> steps back to Level 2 basic circles (stepIdx 2)
+    tutor.evaluateReadingTrial(
+      {
+        hit: false,
+        readingStage: 1,
+        mtMs: 3200,
+        decodeMs: 1200,
+        distractorPullPx: 60,
+        radialNormPct: 0.7,
+        goalPeeks: 0,
+        targetLabel: 'A',
+      },
+      true,
+      'AUTO_PROG',
+      760,
+      4,
+      1.15,
+    );
+    const s1Retrain = tutor.evaluateReadingTrial(
+      {
+        hit: false,
+        readingStage: 1,
+        mtMs: 3500,
+        decodeMs: 1350,
+        distractorPullPx: 68,
+        radialNormPct: 0.75,
+        goalPeeks: 0,
+        targetLabel: 'A',
+      },
+      true,
+      'AUTO_PROG',
+      760,
+      5,
+      1.15,
+    );
+    expect(s1Retrain.stageChanged).toBe('STEPPED_BACK');
+    expect(s1Retrain.retrainBasicStepIdx).toBe(2);
+    expect(s1Retrain.ticker.kind).toBe('BASIC_RETRAIN');
+    expect(tutor.baselineHitsRemaining).toBe(2);
+  });
 });

@@ -208,6 +208,7 @@ function grabScoopVisor(app: LabApp, e: PointerEvent, now: number): void {
 
   strayTapCount = 0;
   app.gesture.samples = [];
+  app.trail = [];
   sv.isDragging = true;
   sv.pointerId = e.pointerId;
   sv.dragStartTime = now;
@@ -298,6 +299,16 @@ function onArenaPointerUp(app: LabApp, e: PointerEvent): void {
     // Dropped in empty space: return cleanly to Goal Center dock & offer gentle tutor assist if repeated
     app.layout.resetScoopVisorPosition();
     const assist = app.tutor.recordEmptyVisorDrop(app.level, app.reading.uiFontScale);
+    if (assist.retrainBasicStepIdx !== null) {
+      app.phaseProgress = 0;
+      app.flow.applyStepIndex(assist.retrainBasicStepIdx, true, true);
+      const msg =
+        assist.dutchSpeech ||
+        'Laten we eerst even met één groot krimp-rondje in het midden oefenen!';
+      app.hud.showToast('🛡️ BASIS-MIKKEN OEFENEN (KRIMP-CIRKEL)', msg, 'border-amber-400');
+      app.voiceEngine.speakDutchTutor(msg, null, assist.voiceEmotion);
+      return;
+    }
     if (assist.recommendedFontScale !== null) {
       app.reading.uiFontScale = assist.recommendedFontScale;
       const lbl = maybeById('lblUiScale');

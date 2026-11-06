@@ -6,6 +6,8 @@ import { TimeStampUtil } from '../util/timestamp';
 export type TutorTickerKind =
   | 'WELCOME'
   | 'BASELINE_CHECK'
+  | 'PRIOR_KNOWLEDGE_JUMP'
+  | 'BASIC_RETRAIN'
   | 'STEADY_HOLD'
   | 'FADE_THROTTLE'
   | 'THROTTLE_BACK'
@@ -48,6 +50,9 @@ export interface TutorStatusSnapshot {
   readonly fadeDurationMs: number;
   readonly fadeUnlocked: boolean;
   readonly baselineHitsRemaining: number;
+  readonly priorKnowledgeCalibrating: boolean;
+  readonly fluentProbeStreak: number;
+  readonly lastLexicalOverheadMs: number;
   readonly activeDistractorCount: number;
   readonly activeTargetCount: 1 | 2;
   readonly politeFirstLetterScaffold: boolean;
@@ -73,6 +78,8 @@ export interface TrialTutorInput {
 export interface TrialTutorOutcome {
   readonly nextStage: number;
   readonly stageChanged: 'PROMOTED' | 'STEPPED_BACK' | 'RETURNED_UP' | 'STEADY';
+  /** When non-null (`1` = L1B Shrink, `2` = L2 Circles), steps back to retrain foundational motor/visual skills. */
+  readonly retrainBasicStepIdx: number | null;
   readonly fadeUnlocked: boolean;
   readonly fadeHoldMs: number;
   readonly fadeDurationMs: number;
@@ -216,6 +223,23 @@ const GIMBAL_ASSIST_LINES: readonly string[] = [
   'Ik maak de letters ietsje groter voor je{, WHO} — leg het bovenste rondje er maar bovenop!',
 ];
 
+const PRIOR_KNOWLEDGE_JUMP_LINES: readonly string[] = [
+  'Zo hé{, WHO}! Ik zie aan hoe vlot je kijkt en stuurt dat je dit al kent — we stappen meteen door naar stap {STAGE}!',
+  'Wauw{, WHO}, die herken je zonder twijfel! Laten we meteen doorpakken bij stap {STAGE}!',
+  'Knap hoor{, WHO}! Dit heb je al helemaal in de vingers — hup, een niveau hoger naar stap {STAGE}!',
+];
+
+const BASIC_RETRAIN_LINES: readonly string[] = [
+  'Kom{, WHO}, we oefenen heel even twee rustige basis-rondjes op het scherm, dan pakken we de letters zo weer op!',
+  'Geen haast{, WHO}! Eerst even twee ontspannen groene rondjes voor een vast scherm-gevoel.',
+  'Helemaal prima{, WHO}! We doen even een klein basis-stapje terug met groene rondjes om lekker in het ritme te komen.',
+];
+
+const MOTOR_BASIC_STEPBACK_LINES: readonly string[] = [
+  'Laten we eerst even met één groot krimp-rondje in het midden oefenen{, WHO}, dan glijdt het sturen straks vanzelf!',
+  'Kom{, WHO}, we beginnen heel ontspannen bij één grote knop in het midden om het scherm rustig te leren kennen.',
+];
+
 const NEXT_PROMPT_LINES: readonly string[] = [
   'Waar zie jij nu {NEXT}?',
   'Kun je {NEXT} vinden?',
@@ -250,6 +274,16 @@ export class EmbeddedTutorEngine {
   readingHitsSinceBaseline = 0;
   baselineMeanMtMs = 1150;
   baselineMeanNormErr = 0.32;
+  private baselineSlowStrainCount = 0;
+
+  /**
+   * Millisecond-detail prior-knowledge pickup & basic-skill retraining state:
+   * - Active on fresh/erased profiles so existing pupil knowledge fast-tracks stages via live ms kinematics,
+   *   then locks onto the pupil's true present-knowledge frontier once cognitive decoding load appears.
+   */
+  priorKnowledgeCalibrating = true;
+  fluentProbeStreak = 0;
+  lastLexicalOverheadMs = 0;
 
   /** Controlled step-back & polite first-letter retry state. */
   temporaryStepBackTargetStage: number | null = null;
@@ -327,6 +361,10 @@ export class EmbeddedTutorEngine {
     this.baselineTotalQuota = 3;
     this.isPeriodicBaselineCheck = false;
     this.readingHitsSinceBaseline = 0;
+    this.baselineSlowStrainCount = 0;
+    this.priorKnowledgeCalibrating = true;
+    this.fluentProbeStreak = 0;
+    this.lastLexicalOverheadMs = 0;
     this.temporaryStepBackTargetStage = null;
     this.temporaryWarmupHitsRemaining = 0;
     this.politeRetryPending = false;
@@ -344,15 +382,22 @@ export class EmbeddedTutorEngine {
       : this.learnerName.trim();
     const tpl = this.pickDistinct(BASELINE_WELCOME_LINES, this.recentTemplates, 2);
     const speech = tpl.replace(/\{WHO\}/g, who);
-    this.lastDecision = `Profiel actief (${this.learnerName}) — start met 3 Tillmann scherm-rondjes als basisreferentie.`;
+    this.lastDecision = `Profiel actief (${this.learnerName}) — start met 3 Tillmann scherm-rondjes & live ms-voorkennismeting.`;
     this.pushTicker(
       'WELCOME',
       'L2-Basis',
       this.lastDecision,
       speech,
       'JOYFUL_SPARK',
-      'baseline=0/3 • fade=STEADY',
+      'baseline=0/3 • ms-probe=ON',
     );
+  }
+
+  /** Re-arms live millisecond prior-knowledge calibration after erasing browser memory. */
+  armPriorKnowledgeCalibration(): void {
+    this.priorKnowledgeCalibrating = true;
+    this.fluentProbeStreak = 0;
+    this.lastLexicalOverheadMs = 0;
   }
 
   /** Arms either the initial 3-hit URL-open baseline or a periodic 2-hit screen checkup on Level 2. */
@@ -395,6 +440,7 @@ export class EmbeddedTutorEngine {
     completed: boolean;
     hitsDone: number;
     totalQuota: number;
+    retrainBasicStepIdx: number | null;
     dutchSpeech: string | null;
     voiceEmotion: VoiceEmotionId;
   } {
@@ -407,6 +453,37 @@ export class EmbeddedTutorEngine {
       99,
       Math.round(this.steeringComfortPct * 0.8 + (normRadiusPct < 0.55 ? 96 : 84) * 0.2),
     );
+
+    if (mtMs > 6200 && normRadiusPct > 0.76) {
+      this.baselineSlowStrainCount++;
+    } else {
+      this.baselineSlowStrainCount = 0;
+    }
+
+    if (this.enabled && this.baselineSlowStrainCount >= 2) {
+      this.baselineSlowStrainCount = 0;
+      const speech = this.renderLine(MOTOR_BASIC_STEPBACK_LINES, {
+        forceVocative: true,
+        preferRealName: !this.isGenericLearner(),
+      });
+      this.lastDecision = `Hoge motorische zoektijd op L2 (${Math.round(mtMs)}ms, rand=${Math.round(normRadiusPct * 100)}%) — stap terug naar L1B krimp-cirkel om basis-mikken te hertrainen.`;
+      this.pushTicker(
+        'BASIC_RETRAIN',
+        'L2→1B',
+        this.lastDecision,
+        speech,
+        'SOOTHING_COMFORT',
+        `MT=${Math.round(mtMs)}ms • r=${Math.round(normRadiusPct * 100)}%`,
+      );
+      return {
+        completed: false,
+        hitsDone: Math.max(0, this.baselineTotalQuota - this.baselineHitsRemaining),
+        totalQuota: this.baselineTotalQuota,
+        retrainBasicStepIdx: 1,
+        dutchSpeech: speech,
+        voiceEmotion: 'SOOTHING_COMFORT',
+      };
+    }
 
     if (this.baselineHitsRemaining > 0) {
       this.baselineHitsRemaining--;
@@ -437,6 +514,7 @@ export class EmbeddedTutorEngine {
         completed: true,
         hitsDone,
         totalQuota: this.baselineTotalQuota,
+        retrainBasicStepIdx: null,
         dutchSpeech: speech,
         voiceEmotion: 'PROUD_CELEBRATE',
       };
@@ -452,6 +530,7 @@ export class EmbeddedTutorEngine {
       completed: false,
       hitsDone,
       totalQuota: this.baselineTotalQuota,
+      retrainBasicStepIdx: null,
       dutchSpeech: interimSpeech,
       voiceEmotion: 'JOYFUL_SPARK',
     };
@@ -637,7 +716,7 @@ export class EmbeddedTutorEngine {
     };
   }
 
-  /** Records an empty-space drop of the Scoop-Visor and offers gentle steering guidance if repeated. */
+  /** Records an empty-space drop of the Scoop-Visor and offers gentle steering guidance (or basic motor step-back). */
   recordEmptyVisorDrop(
     level: Level,
     currentFontScale: number,
@@ -645,9 +724,33 @@ export class EmbeddedTutorEngine {
     dutchSpeech: string | null;
     voiceEmotion: VoiceEmotionId;
     recommendedFontScale: number | null;
+    retrainBasicStepIdx: number | null;
   } {
     this.emptyDropStreak++;
     this.steeringComfortPct = Math.max(40, this.steeringComfortPct - 8);
+    if (this.enabled && level === 2 && this.emptyDropStreak >= 3) {
+      this.emptyDropStreak = 0;
+      const speech = this.renderLine(MOTOR_BASIC_STEPBACK_LINES, {
+        forceVocative: true,
+        preferRealName: !this.isGenericLearner(),
+      });
+      this.lastDecision =
+        '3x losgelaten naast het doel op L2 — stapje terug naar L1B krimp-cirkel om basis-mikken rustig te oefenen.';
+      this.pushTicker(
+        'BASIC_RETRAIN',
+        'L2→1B',
+        this.lastDecision,
+        speech,
+        'SOOTHING_COMFORT',
+        'emptyDrops=3',
+      );
+      return {
+        dutchSpeech: speech,
+        voiceEmotion: 'SOOTHING_COMFORT',
+        recommendedFontScale: null,
+        retrainBasicStepIdx: 1,
+      };
+    }
     if (this.emptyDropStreak >= 2) {
       const nextScale = Math.min(1.4, Number((currentFontScale + 0.08).toFixed(2)));
       const speech = this.renderLine(GIMBAL_ASSIST_LINES, { forceVocative: false });
@@ -665,12 +768,23 @@ export class EmbeddedTutorEngine {
         dutchSpeech: speech,
         voiceEmotion: 'WARM_ENCOURAGE',
         recommendedFontScale: nextScale,
+        retrainBasicStepIdx: null,
       };
     }
-    return { dutchSpeech: null, voiceEmotion: 'WARM_ENCOURAGE', recommendedFontScale: null };
+    return {
+      dutchSpeech: null,
+      voiceEmotion: 'WARM_ENCOURAGE',
+      recommendedFontScale: null,
+      retrainBasicStepIdx: null,
+    };
   }
 
-  /** Evaluates a reading trial with child-paced throttling, varied Dutch speech and dynamic emotion selection. */
+  /**
+   * Evaluates a reading trial at millisecond kinematic detail:
+   * - Picks up prior knowledge via `lexicalOverheadMs` (`decodeMs - 0.65 * RT0`), `mtMs`, `distractorPullPx` & `goalPeeks`,
+   *   fast-forwarding stages on 2 consecutive fluent hits until locking onto the pupil's present-knowledge frontier.
+   * - Steps back to retrain easier reading stages or foundational Level 2 circles when millisecond strain/misses occur.
+   */
   evaluateReadingTrial(
     input: TrialTutorInput,
     autoZPD: boolean,
@@ -683,6 +797,7 @@ export class EmbeddedTutorEngine {
     this.emptyDropStreak = 0;
     let nextStage = input.readingStage;
     let stageChanged: TrialTutorOutcome['stageChanged'] = 'STEADY';
+    let retrainBasicStepIdx: number | null = null;
     let recommendedFontScale: number | null = null;
     let dutchCoachLine: string | null = null;
     let voiceEmotion: VoiceEmotionId = 'WARM_ENCOURAGE';
@@ -694,9 +809,40 @@ export class EmbeddedTutorEngine {
     const veryLongSearch = input.mtMs > 12500;
     const hesitant = peeked || distracted || veryLongSearch;
 
+    const lexicalOverheadMs = Math.max(0, Math.round(input.decodeMs - rt0BaselineMs * 0.65));
+    this.lastLexicalOverheadMs = lexicalOverheadMs;
+    const fluentKnowledgeHit =
+      input.hit &&
+      !hesitant &&
+      input.mtMs <= 2450 &&
+      lexicalOverheadMs <= 480 &&
+      input.distractorPullPx <= 28 &&
+      input.radialNormPct <= 0.68;
+    const frontierLoadDetected =
+      !input.hit ||
+      hesitant ||
+      input.mtMs > 2950 ||
+      lexicalOverheadMs > 580 ||
+      input.distractorPullPx > 34;
+
+    if (frontierLoadDetected) {
+      this.fluentProbeStreak = 0;
+      if (
+        this.priorKnowledgeCalibrating &&
+        (!input.hit || input.readingStage >= 2 || input.mtMs > 3600)
+      ) {
+        this.priorKnowledgeCalibrating = false;
+      }
+    }
+
     if (input.hit) {
       this.consecutiveMisses = 0;
       this.stageHitStreak++;
+      if (fluentKnowledgeHit) {
+        this.fluentProbeStreak++;
+      } else {
+        this.fluentProbeStreak = 0;
+      }
       if (this.temporaryStepBackTargetStage === null) {
         this.readingHitsSinceBaseline++;
       }
@@ -741,6 +887,7 @@ export class EmbeddedTutorEngine {
             this.politeScaffoldTrialsLeft = 2;
           }
           this.stageHitStreak = 0;
+          this.fluentProbeStreak = 0;
           this.calmStreak = 1;
           stageChanged = 'RETURNED_UP';
           kind = 'STEP_RETURN';
@@ -756,12 +903,42 @@ export class EmbeddedTutorEngine {
       } else if (
         autoZPD &&
         this.enabled &&
-        this.stageHitStreak >= 4 &&
-        !hesitant &&
+        this.priorKnowledgeCalibrating &&
+        this.fluentProbeStreak >= 2 &&
+        input.readingStage < 6
+      ) {
+        const ultraAutomaticStage1 =
+          input.readingStage === 1 &&
+          input.mtMs <= 1450 &&
+          lexicalOverheadMs <= 220 &&
+          input.distractorPullPx <= 14;
+        const jumpDelta = ultraAutomaticStage1 ? 2 : 1;
+        nextStage = Math.min(6, input.readingStage + jumpDelta);
+        if (nextStage >= 6) {
+          this.priorKnowledgeCalibrating = false;
+        }
+        this.stageHitStreak = 0;
+        this.fluentProbeStreak = 0;
+        this.calmStreak = 0;
+        stageChanged = 'PROMOTED';
+        kind = 'PRIOR_KNOWLEDGE_JUMP';
+        voiceEmotion = 'PROUD_CELEBRATE';
+        dutchCoachLine = this.renderLine(PRIOR_KNOWLEDGE_JUMP_LINES, {
+          stage: nextStage,
+          forceVocative: true,
+          preferRealName: true,
+        });
+        this.lastDecision = `⚡ Voorkennis herkend op ms-dynamiek (+lex=${lexicalOverheadMs}ms, MT=${Math.round(input.mtMs)}ms, trek=${Math.round(input.distractorPullPx)}px) → direct naar leesstap ${nextStage}/6!`;
+        this.lastSpokenPraiseTrial = this.trialCounter;
+      } else if (
+        autoZPD &&
+        this.enabled &&
+        ((this.fluentProbeStreak >= 3 && !hesitant) || (this.stageHitStreak >= 4 && !hesitant)) &&
         input.readingStage < 6
       ) {
         nextStage = input.readingStage + 1;
         this.stageHitStreak = 0;
+        this.fluentProbeStreak = 0;
         this.calmStreak = 0;
         stageChanged = 'PROMOTED';
         kind = 'PROMOTE';
@@ -771,7 +948,7 @@ export class EmbeddedTutorEngine {
           forceVocative: true,
           preferRealName: true,
         });
-        this.lastDecision = `4 vlotte treffers op rij — door naar leesstap ${nextStage}/6!`;
+        this.lastDecision = `Vlotte beheersing (+lex=${lexicalOverheadMs}ms, MT=${Math.round(input.mtMs)}ms) — door naar leesstap ${nextStage}/6!`;
         this.lastSpokenPraiseTrial = this.trialCounter;
       } else if (!hesitant) {
         const reqHits = this.requiredBaselineHits(rt0BaselineMs, trialCount);
@@ -805,6 +982,7 @@ export class EmbeddedTutorEngine {
     } else {
       this.consecutiveMisses++;
       this.stageHitStreak = 0;
+      this.fluentProbeStreak = 0;
       this.calmStreak = 0;
       this.steeringComfortPct = Math.max(45, this.steeringComfortPct - 10);
       voiceEmotion = 'SOOTHING_COMFORT';
@@ -824,6 +1002,26 @@ export class EmbeddedTutorEngine {
           preferRealName: true,
         });
         this.lastDecision = `2 missers op rij — tijdelijk stapje terug (${input.readingStage}→${nextStage}) voor 2 succes-treffers, daarna vriendelijke herstart met eerste-letter hulp.`;
+        this.lastSpokenPraiseTrial = this.trialCounter;
+      } else if (
+        autoZPD &&
+        this.enabled &&
+        this.consecutiveMisses >= 2 &&
+        input.readingStage === 1
+      ) {
+        this.consecutiveMisses = 0;
+        this.politeScaffoldTrialsLeft = 2;
+        retrainBasicStepIdx = 2;
+        this.startBaselineSession(2, true);
+        recommendedFontScale = Math.min(1.4, Number((currentFontScale + 0.08).toFixed(2)));
+        stageChanged = 'STEPPED_BACK';
+        kind = 'BASIC_RETRAIN';
+        dutchCoachLine = this.renderLine(BASIC_RETRAIN_LINES, {
+          forceVocative: true,
+          preferRealName: true,
+        });
+        this.lastDecision =
+          '2 missers op losse letters (S1) — even terug naar 2 groene basis-rondjes (L2) om rust & scherm-zekerheid te hertrainen.';
         this.lastSpokenPraiseTrial = this.trialCounter;
       } else {
         if (this.enabled && this.consecutiveMisses >= 2 && input.readingStage === 1) {
@@ -845,10 +1043,10 @@ export class EmbeddedTutorEngine {
       rt0BaselineMs,
       trialCount,
     );
-    const metricsTag = `MT=${Math.round(input.mtMs)}ms • pull=${Math.round(input.distractorPullPx)}px • hold=${sched.initialShowMs > 90000 ? 'STEADY' : `${(sched.initialShowMs / 1000).toFixed(1)}s`}`;
+    const metricsTag = `MT=${Math.round(input.mtMs)}ms • +lex=${lexicalOverheadMs}ms • pull=${Math.round(input.distractorPullPx)}px • hold=${sched.initialShowMs > 90000 ? 'STEADY' : `${(sched.initialShowMs / 1000).toFixed(1)}s`}`;
     const ticker = this.pushTicker(
       kind,
-      `S${nextStage}`,
+      retrainBasicStepIdx !== null ? 'S1→L2' : `S${nextStage}`,
       this.lastDecision,
       dutchCoachLine,
       dutchCoachLine ? voiceEmotion : null,
@@ -858,6 +1056,7 @@ export class EmbeddedTutorEngine {
     return {
       nextStage,
       stageChanged,
+      retrainBasicStepIdx,
       fadeUnlocked: sched.calmFadeUnlocked,
       fadeHoldMs: sched.initialShowMs,
       fadeDurationMs: sched.fadeDurationMs,
@@ -904,6 +1103,9 @@ export class EmbeddedTutorEngine {
       fadeDurationMs: sched.fadeDurationMs,
       fadeUnlocked: sched.calmFadeUnlocked,
       baselineHitsRemaining: this.baselineHitsRemaining,
+      priorKnowledgeCalibrating: this.priorKnowledgeCalibrating,
+      fluentProbeStreak: this.fluentProbeStreak,
+      lastLexicalOverheadMs: this.lastLexicalOverheadMs,
       activeDistractorCount: this.activeVariation.distractorCount,
       activeTargetCount: this.activeVariation.targetCount,
       politeFirstLetterScaffold: this.activeVariation.politeFirstLetterScaffold,

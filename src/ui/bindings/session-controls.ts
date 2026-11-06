@@ -1,6 +1,6 @@
 import type { LabApp } from '../../app/lab-app';
 import { BUILD_INFO } from '../../app/build-info';
-import { onClick } from '../../util/dom';
+import { maybeById, onClick } from '../../util/dom';
 
 /** Preset loaders, new-kid reset, checkpoint commit/revert, morph toggle and JSON copy/save. */
 export function bindSessionControls(app: LabApp): void {
@@ -39,18 +39,57 @@ export function bindSessionControls(app: LabApp): void {
     );
   });
 
-  // Clear Storage / New Kid Profile
+  // Clear Storage / New Kid Profile (inside Lab Drawer)
   onClick('btnClearStorage', () => {
     app.persistence.clearBrowserSave();
     app.resetFreshLearnerState();
+    app.tutor.armPriorKnowledgeCalibration();
     app.persistence.saveToBrowser(app);
     app.flow.syncStageUI();
     app.spawner.spawnForCurrentLevel();
     app.hud.showToast(
       `👶 SCHOON PROFIEL: ${app.persistence.activeNickname}`,
-      'Geheugen gewist — rustige start zonder vervagen op Leesstap 1!',
+      'Geheugen gewist — live ms-voorkennismeting actief vanaf de basis!',
       'border-rose-500',
     );
+  });
+
+  // Bottom Service Button: Erase All Webpage Data-Memory + Re-Calibrate from Millisecond Dynamics
+  const openServiceEraseModal = (): void => {
+    const modal = maybeById('serviceEraseModal');
+    if (!modal) return;
+    const summaryEl = maybeById('eraseModalMemorySummary');
+    if (summaryEl) {
+      summaryEl.textContent = `Sessie #${app.persistence.sessionNumber} • ${app.telemetry.trials.length} trials • ${app.persistence.profiles.length} profielen`;
+    }
+    modal.classList.remove('hidden');
+  };
+  const closeServiceEraseModal = (): void => {
+    maybeById('serviceEraseModal')?.classList.add('hidden');
+  };
+  const confirmEraseWebpageMemory = (): void => {
+    closeServiceEraseModal();
+    app.eraseAllWebpageMemoryAndRecalibrate();
+    app.hud.showToast(
+      '🧹 WEBPAGINA DATA-GEHEUGEN GEWIST',
+      'Langetermijn-historie gereset — tutor pakt op ms-detail direct je huidige niveau op!',
+      'border-rose-500',
+    );
+  };
+
+  onClick('btnEraseDataMemory', () => openServiceEraseModal(), { stopPropagation: true });
+  onClick('btnCancelEraseMemory', () => closeServiceEraseModal());
+  onClick('btnConfirmEraseMemory', () => confirmEraseWebpageMemory());
+  window.addEventListener('keydown', (e) => {
+    const modal = maybeById('serviceEraseModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeServiceEraseModal();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmEraseWebpageMemory();
+    }
   });
 
   // Git-Style Checkpoint Commit & Revert Buttons
