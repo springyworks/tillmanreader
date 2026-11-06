@@ -70,9 +70,11 @@
 }
 .w-screen {
   width: 100vw;
+  width: 100dvw;
 }
 .h-screen {
   height: 100vh;
+  height: 100dvh;
 }
 .p-2 {
   padding: 8px;

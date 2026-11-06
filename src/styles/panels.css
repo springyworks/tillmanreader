@@ -3,7 +3,10 @@
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: 12px;
-  height: 245px;
+  height: auto;
+}
+.scopes-grid > div {
+  min-height: 165px;
 }
 .metrics-grid {
   display: grid;
@@ -22,6 +25,9 @@
   .scopes-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .scopes-grid > div {
+    min-height: 185px;
+  }
   .metrics-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -35,6 +41,10 @@
   }
   .scopes-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+    height: 245px;
+  }
+  .scopes-grid > div {
+    min-height: 0;
   }
   .metrics-grid {
     grid-template-columns: repeat(8, minmax(0, 1fr));

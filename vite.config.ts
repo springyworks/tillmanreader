@@ -46,7 +46,6 @@ export default defineConfig({
   plugins: [viteSingleFile()],
   build: {
     target: 'es2022',
-    cssMinify: false,
     chunkSizeWarningLimit: 1024,
   },
   test: {

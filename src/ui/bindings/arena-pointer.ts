@@ -51,6 +51,7 @@ function onArenaPointerMove(app: LabApp, e: PointerEvent): void {
   const now = performance.now();
   const sv = app.scoopVisor;
   const dragging = sv.enabled && sv.isDragging;
+  if (dragging && sv.pointerId !== null && e.pointerId !== sv.pointerId) return;
 
   // Update Anti-FFP Scoop-Visor coordinates if dragging (or following mouse when button is down)
   if (dragging) {
@@ -181,6 +182,10 @@ function grabScoopVisor(app: LabApp, e: PointerEvent, now: number): void {
 
 function onArenaPointerDown(app: LabApp, e: PointerEvent): void {
   const now = performance.now();
+  const sv = app.scoopVisor;
+  if (sv.enabled && sv.isDragging && sv.pointerId !== null && e.pointerId !== sv.pointerId) {
+    return;
+  }
   unlockOnFirstTouch(app, e);
   if (tapEnablesVoice(app, e)) return;
 
@@ -193,7 +198,7 @@ function onArenaPointerDown(app: LabApp, e: PointerEvent): void {
     return;
   }
 
-  if (app.scoopVisor.enabled) {
+  if (sv.enabled) {
     grabScoopVisor(app, e, now);
   } else {
     app.cursor = { x: e.offsetX, y: e.offsetY };
@@ -206,8 +211,10 @@ function onArenaPointerUp(app: LabApp, e: PointerEvent): void {
   const now = performance.now();
   const sv = app.scoopVisor;
   if (!sv.enabled || !sv.isDragging) return;
+  if (sv.pointerId !== null && e.pointerId !== sv.pointerId) return;
 
   sv.isDragging = false;
+  sv.pointerId = null;
   try {
     app.canvas.releasePointerCapture(e.pointerId);
   } catch {
@@ -230,9 +237,20 @@ function onArenaPointerUp(app: LabApp, e: PointerEvent): void {
   }
 }
 
+/** Resets Scoop-Visor drag cleanly if Android/OS cancels the touch (palm rejection, back swipe, fullscreen transition). */
+function onArenaPointerCancel(app: LabApp, e: PointerEvent): void {
+  const sv = app.scoopVisor;
+  if (!sv.isDragging) return;
+  if (sv.pointerId !== null && e.pointerId !== sv.pointerId) return;
+  sv.isDragging = false;
+  sv.pointerId = null;
+  sv.hoveredCandidate = null;
+}
+
 /** Arena canvas pointer telemetry with the distance-gated ballistic latch and scoop-visor drag/drop. */
 export function bindArenaPointer(app: LabApp): void {
   app.canvas.addEventListener('pointermove', (e) => onArenaPointerMove(app, e));
   app.canvas.addEventListener('pointerdown', (e) => onArenaPointerDown(app, e));
   app.canvas.addEventListener('pointerup', (e) => onArenaPointerUp(app, e));
+  app.canvas.addEventListener('pointercancel', (e) => onArenaPointerCancel(app, e));
 }

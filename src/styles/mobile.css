@@ -42,7 +42,8 @@
   #topHeader {
     overflow: visible !important;
     justify-content: space-between !important;
-    padding: 4px 8px !important;
+    padding: max(4px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) 4px
+      max(8px, env(safe-area-inset-left, 0px)) !important;
   }
   #topHeader > .flex-col {
     display: none !important;
@@ -74,7 +75,8 @@
     display: none !important;
   }
   #drawerStateBtns {
-    width: 100%;
+    width: auto;
+    margin-left: auto;
     justify-content: flex-end;
   }
   #drawerStateBtns .dstate-btn {
@@ -89,6 +91,7 @@
     height: min(310px, 34dvh);
   }
   #telemetryDrawer[data-state='2'] {
+    height: calc(52vh - 30px);
     height: calc(52dvh - 30px);
   }
   #arenaContainer {

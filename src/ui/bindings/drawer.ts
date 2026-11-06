@@ -18,8 +18,11 @@ export function bindDrawer(app: LabApp): void {
   const handle = byId('drawerHandle');
   let dragStartY: number | null = null;
   handle.addEventListener('pointerdown', (e) => {
-    if (closestFrom(e.target, '#drawerStateBtns')) return;
+    if (closestFrom(e.target, 'button')) return;
     dragStartY = e.clientY;
+  });
+  window.addEventListener('pointercancel', () => {
+    dragStartY = null;
   });
   window.addEventListener('pointerup', (e) => {
     app.telemetry.recordUp(app.cursor.x, app.cursor.y, performance.now());
