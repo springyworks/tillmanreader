@@ -64,10 +64,15 @@ export class ScoopVisorRenderer {
     ctx.lineTo(sv.visorX, sv.visorY + vr + 5);
     ctx.stroke();
 
+    const gc = this.app.arenaRenderer.lastGoalCenterRect;
+    const outsideGoalBox =
+      !gc || Math.hypot(sv.visorX - (gc.x + gc.w / 2), sv.visorY - (gc.y + gc.h / 2)) > 26;
+
     if (
       this.app.level === 7 &&
       this.app.activeReadingItem &&
-      this.app.goalMemory.revealAlpha > 0.15
+      this.app.goalMemory.revealAlpha > 0.15 &&
+      outsideGoalBox
     ) {
       ctx.save();
       ctx.globalAlpha = this.app.goalMemory.revealAlpha;
@@ -81,13 +86,23 @@ export class ScoopVisorRenderer {
       ctx.fillStyle = '#10b981';
       ctx.font = 'bold 10px ui-monospace, monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('LIFT TO DROP!', sv.visorX, sv.visorY - vr - 10);
+      ctx.fillText('LAAT LOS!', sv.visorX, sv.visorY - vr - 10);
     }
 
     // 3. LOWER TACTILE THUMB / FINGER HANDLE PAD (Where the fat finger rests)
     const hr = sv.handleR;
+    if (sv.nudgePulse > 0.01) {
+      ctx.save();
+      ctx.strokeStyle = `rgba(251, 191, 36, ${Math.min(1, sv.nudgePulse).toFixed(2)})`;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.arc(sv.handleX, sv.handleY, hr + 6 + (1 - sv.nudgePulse) * 18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     ctx.fillStyle = sv.isDragging ? 'rgba(14, 165, 233, 0.92)' : 'rgba(15, 23, 42, 0.94)';
-    ctx.strokeStyle = locked ? '#10b981' : '#38bdf8';
+    ctx.strokeStyle = sv.nudgePulse > 0.1 ? '#fbbf24' : locked ? '#10b981' : '#38bdf8';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.arc(sv.handleX, sv.handleY, hr, 0, Math.PI * 2);
@@ -96,12 +111,12 @@ export class ScoopVisorRenderer {
 
     // Tactile grip ridges on the lower thumb pad
     ctx.fillStyle = sv.isDragging ? '#020617' : '#e2e8f0';
-    ctx.font = 'bold 10px ui-monospace, monospace';
+    ctx.font = 'bold 9.5px ui-monospace, monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(sv.isDragging ? 'DRAGGING' : 'HOLD & DRAG', sv.handleX, sv.handleY - 4);
-    ctx.font = '9px ui-monospace, monospace';
-    ctx.fillText(locked ? '⬆ RELEASE!' : '🔭 SCOOP PAD', sv.handleX, sv.handleY + 7);
+    ctx.fillText(sv.isDragging ? 'SLEPEN...' : 'SLEEP HIER', sv.handleX, sv.handleY - 4, hr * 1.85);
+    ctx.font = '8.5px ui-monospace, monospace';
+    ctx.fillText(locked ? '⬆ LAAT LOS!' : '🔭 HANDVAT', sv.handleX, sv.handleY + 7, hr * 1.85);
 
     ctx.restore();
   }

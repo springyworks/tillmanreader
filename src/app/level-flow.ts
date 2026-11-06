@@ -56,6 +56,9 @@ export class LevelFlow {
         this.app.reading.stage++;
         this.app.goalMemory.stageUnfadedStreak = 0;
         this.app.goalMemory.calmFadeUnlocked = false;
+        this.app.tutor.calmStreak = 0;
+        this.app.tutor.stageHitStreak = 0;
+        this.app.tutor.temporaryStepBackTargetStage = null;
         this.syncStageUI();
         this.app.spawner.spawnForCurrentLevel();
         return;
@@ -63,6 +66,9 @@ export class LevelFlow {
         this.app.reading.stage--;
         this.app.goalMemory.stageUnfadedStreak = 0;
         this.app.goalMemory.calmFadeUnlocked = false;
+        this.app.tutor.calmStreak = 0;
+        this.app.tutor.stageHitStreak = 0;
+        this.app.tutor.temporaryStepBackTargetStage = null;
         this.syncStageUI();
         this.app.spawner.spawnForCurrentLevel();
         return;
@@ -133,6 +139,11 @@ export class LevelFlow {
       btnShrink.className = 'ergo-sub-btn active';
       btnZero.className = 'ergo-sub-btn';
     }
+    const learnerLbl = maybeById('learnerNameLabel');
+    if (learnerLbl) learnerLbl.textContent = this.app.persistence.activeNickname;
+    const tutorCountLbl = maybeById('btnHumanTutorBadge');
+    if (tutorCountLbl) tutorCountLbl.textContent = String(this.app.tutor.tickers.length);
+
     this.app.hud.updateHUDText();
     setTimeout(() => {
       this.app.guiEngine.scanDOMElements();
@@ -141,40 +152,21 @@ export class LevelFlow {
   }
 
   /**
-   * Configures Goal Memory fade timing & working-memory parameters
+   * Configures Goal Memory fade timing & working-memory parameters via the Embedded Tutor's
+   * child-safe throttle (never unlocks after 1 hit or drops to a 420ms shock!).
    */
   configureGoalMemoryParameters() {
     const gm = this.app.goalMemory;
-    if (gm.mode === 'ALWAYS') {
-      gm.initialShowMs = 999999;
-      gm.fadeDurationMs = 1000;
-      gm.cloakTargets = false;
-      gm.calmFadeUnlocked = false;
-    } else if (gm.mode === 'PEEK_1200') {
-      gm.initialShowMs = 1200;
-      gm.fadeDurationMs = 1100;
-      gm.cloakTargets = false;
-      gm.calmFadeUnlocked = true;
-    } else if (gm.mode === 'MEM_500') {
-      gm.initialShowMs = 500;
-      gm.fadeDurationMs = 600;
-      gm.cloakTargets = true;
-      gm.calmFadeUnlocked = true;
-    } else {
-      // AUTO_PROG: Unlock after 1 clean baseline hit for adult-speed proficiency
-      const fastAdult =
-        this.app.telemetry.rt0BaselineMs < 650 || this.app.telemetry.regMotor.tp > 4.0;
-      gm.RequiredBaselineHits = fastAdult ? 1 : 2;
-      gm.calmFadeUnlocked = gm.stageUnfadedStreak >= gm.RequiredBaselineHits;
-      if (gm.calmFadeUnlocked) {
-        gm.initialShowMs = Math.max(420, 950 - gm.autoStreak * 110);
-        gm.fadeDurationMs = 1050;
-        gm.cloakTargets = gm.autoStreak >= 4;
-      } else {
-        gm.initialShowMs = 999999;
-        gm.fadeDurationMs = 1100;
-        gm.cloakTargets = false;
-      }
-    }
+    const sched = this.app.tutor.computeGoalFadeSchedule(
+      gm.mode,
+      gm.stageUnfadedStreak,
+      this.app.telemetry.rt0BaselineMs,
+      this.app.telemetry.trials.length,
+    );
+    gm.RequiredBaselineHits = sched.requiredHits;
+    gm.calmFadeUnlocked = sched.calmFadeUnlocked;
+    gm.initialShowMs = sched.initialShowMs;
+    gm.fadeDurationMs = sched.fadeDurationMs;
+    gm.cloakTargets = sched.cloakTargets;
   }
 }

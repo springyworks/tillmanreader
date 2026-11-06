@@ -1,6 +1,8 @@
 import { VocalTractFormantEngine } from '../audio/vocal-tract-formant-engine';
+import { FeedbackCollector } from '../diagnostics/feedback-collector';
 import { RuntimeWatchdog } from '../diagnostics/runtime-watchdog';
 import { AdaptiveReadingEngine } from '../engines/adaptive-reading-engine';
+import { EmbeddedTutorEngine } from '../engines/embedded-tutor-engine';
 import { ForeperiodHazardEngine } from '../engines/foreperiod-hazard-engine';
 import { GestureDecoder } from '../engines/gesture-decoder';
 import { GuiAffordanceDoodleEngine } from '../engines/gui-affordance-doodle-engine';
@@ -77,6 +79,11 @@ export class LabApp {
   readonly voiceEngine: VocalTractFormantEngine;
   readonly gesture: GestureDecoder;
   readonly guiEngine: GuiAffordanceDoodleEngine;
+  readonly tutor: EmbeddedTutorEngine;
+  readonly feedback: FeedbackCollector;
+
+  /** Interactive click/tap-to-pick GUI element mode for mobile & Human-Tutor feedback. */
+  guiPickModeActive: boolean;
 
   /** Semantic circle -> SVG morph celebration: whether it rewards or distracts is measured. */
   semanticMorphEnabled: boolean;
@@ -164,6 +171,9 @@ export class LabApp {
     this.guiEngine = new GuiAffordanceDoodleEngine((type, gui, meta) =>
       this.hud.handleGuiDoodle(type, gui, meta),
     );
+    this.tutor = new EmbeddedTutorEngine();
+    this.feedback = new FeedbackCollector();
+    this.guiPickModeActive = false;
 
     // Semantic Circle -> SVG Morphing State (Celebrates hits & measures whether it's rewarding or distracting!)
     this.semanticMorphEnabled = true;
@@ -171,25 +181,25 @@ export class LabApp {
 
     /**
      * ANTI-FAT-FINGER (FFP) OFFSET SCOOP-VISOR DRAG & DROP RIG:
-     * - Solves touchscreen hover blindness & Fat-Finger occlusion:
-     * - The user touches/drags the lower Handle Pad (handleX, handleY).
-     * - Connected by a rigid carbon-cyan strut above the finger is the transparent
-     *   Optical Scoop Visor (visorX, visorY = handleY - offsetPx), carrying the goal payload!
-     * - Lifting the finger (`pointerup`) drops the Scoop Visor onto the target under the crosshairs.
+     * - Docked at the Top Goal Center Launch Box at the start of every trial.
+     * - Preserves grabOffsetX / grabOffsetY so dragging never jumps or snaps!
      */
     this.scoopVisor = {
       enabled: true, // Default ON so touch & mouse both generate continuous drag kinematics!
       isDragging: false,
       pointerId: null,
-      offsetY: 86, // Vertical separation (px) between lower finger pad and upper optical scoop visor
+      offsetY: 84, // Vertical separation (px) between lower finger pad and upper optical scoop visor
       handleX: 450,
-      handleY: 380,
+      handleY: 160,
       visorX: 450,
-      visorY: 294,
+      visorY: 76,
+      grabOffsetX: 0,
+      grabOffsetY: 0,
       handleR: 28,
       visorR: 30,
       dragStartTime: 0,
       dragPathLen: 0,
+      nudgePulse: 0,
       hoveredCandidate: null, // Target currently inside the upper Scoop Visor crosshairs
       dropRipples: [], // Visual feedback on lift-to-drop
     };
@@ -270,12 +280,12 @@ export class LabApp {
     this.currentTrialDockMs = 0;
     this.currentTrialGesture = null;
 
-    // Parameterized Top-Goal Hover-to-Reveal & Working-Memory State (Defaults to AUTO_PROG)
+    // Parameterized Top-Goal Hover-to-Reveal & Working-Memory State (Defaults to gentle child-safe AUTO_PROG)
     this.goalMemory = {
       mode: 'AUTO_PROG',
-      initialShowMs: 900,
-      fadeDurationMs: 1100, // Responsive 1.1s cosine fade-away duration
-      RequiredBaselineHits: 1, // Adult-adaptive: 1 fast hit unlocks goal-hiding immediately!
+      initialShowMs: 999999,
+      fadeDurationMs: 1600,
+      RequiredBaselineHits: 5,
       cloakTargets: false,
       isHoveringTopGoal: false,
       hoverEnterTime: 0,
@@ -303,20 +313,16 @@ export class LabApp {
     this.guiEngine.scanDOMElements();
     this.panels.buildGuiRegistryDOM();
     this.panels.build100MetricDOM();
-    bindEvents(this);
 
-    // Check Browser LocalStorage first so returning child/PUT picks up right where they left off!
+    // Check Browser LocalStorage for the active learner profile — NEVER pre-load adult 66-trial presets on a new kid!
     const restoredFromSave = this.persistence.loadFromBrowser(this);
     if (!restoredFromSave) {
-      this.telemetry.loadPreset66(this.fpEngine, this.reading);
-      // Start new learners at Stage 1 (or Stage 2/3 if adult) immediately in Level 7 Tillmann Reader!
-      this.currentStepIdx = 4;
-      this.level = 7;
-      this.reading.stage = 1;
+      this.resetFreshLearnerState();
       this.persistence.saveToBrowser(this);
       this.persistence.commitCheckpoint(this);
     } else {
-      // Even when restoring a session, if URL is opened directly by a child, jump straight into Tillmann Reader (Step 4) unless manually in another game
+      this.tutor.learnerName = this.persistence.activeNickname;
+      this.tutor.calmStreak = this.goalMemory.stageUnfadedStreak;
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('mode') !== 'lab') {
         this.currentStepIdx = 4;
@@ -324,7 +330,16 @@ export class LabApp {
       const cfg = this.levelSteps[this.currentStepIdx] || this.levelSteps[4];
       this.level = cfg.level;
       this.l1Mode = cfg.l1Mode;
+      this.tutor.logExternalEvent(
+        'WELCOME',
+        `S${this.reading.stage}`,
+        `Profiel hersteld voor ${this.persistence.activeNickname} (${this.telemetry.trials.length} trials, stap ${this.reading.stage}/6).`,
+        `Welkom terug, ${this.tutor.vocative()}!`,
+        `fade=${this.goalMemory.calmFadeUnlocked ? 'ON' : 'STEADY'}`,
+      );
     }
+
+    bindEvents(this);
 
     // Guarantee state is auto-saved when switching tabs, locking iPad screen, or closing window
     window.addEventListener('visibilitychange', () => {
@@ -396,6 +411,64 @@ export class LabApp {
   }
 
   // Public facade: stable entry points used by engines, the watchdog and the console.
+  /** Initializes a clean, unpolluted child-friendly baseline for a brand-new learner profile. */
+  resetFreshLearnerState(): void {
+    this.telemetry.trials = [];
+    this.telemetry.rt0BaselineMs = 780;
+    this.telemetry.effectiveWidthRatio = 0.48;
+    this.telemetry.meanNormRadiusPct = 0.34;
+    this.telemetry.selfImposedTaxBits = 1.05;
+    this.fpEngine.records = [];
+    this.reading.stage = 1;
+    this.reading.streak = 0;
+    this.reading.hits = 0;
+    this.reading.misses = 0;
+    this.reading.uiFontScale = 1.15;
+    this.reading.zpdScore = 75;
+    this.goalMemory.mode = 'AUTO_PROG';
+    this.goalMemory.stageUnfadedStreak = 0;
+    this.goalMemory.autoStreak = 0;
+    this.goalMemory.calmFadeUnlocked = false;
+    this.goalMemory.revealAlpha = 1.0;
+    this.currentStepIdx = 4;
+    this.level = 7;
+    this.l1Mode = 'zero';
+    this.phaseProgress = 0;
+    this.tutor.resetForLearner(this.persistence.activeNickname);
+    this.flow.configureGoalMemoryParameters();
+  }
+
+  /** Saves the current learner profile, activates `nickname`, and loads or initializes their clean curve. */
+  switchLearnerProfile(nickname: string): void {
+    this.persistence.saveToBrowser(this);
+    this.persistence.selectOrCreateLearner(nickname);
+    const loaded = this.persistence.loadFromBrowser(this);
+    if (!loaded) {
+      this.resetFreshLearnerState();
+      this.persistence.saveToBrowser(this);
+    } else {
+      this.tutor.learnerName = this.persistence.activeNickname;
+      this.tutor.calmStreak = this.goalMemory.stageUnfadedStreak;
+      const cfg = this.levelSteps[this.currentStepIdx] || this.levelSteps[4];
+      this.level = cfg.level;
+      this.l1Mode = cfg.l1Mode;
+      this.tutor.logExternalEvent(
+        'WELCOME',
+        `S${this.reading.stage}`,
+        `Gewisseld naar ${this.persistence.activeNickname} (${this.telemetry.trials.length} trials, stap ${this.reading.stage}/6).`,
+        `Hoi ${this.tutor.vocative()}! We gaan lekker verder bij stap ${this.reading.stage}.`,
+      );
+    }
+    this.flow.syncStageUI();
+    this.spawner.spawnForCurrentLevel(true);
+    if (this.voiceEngine.enabled && this.firstTouchUnlocked) {
+      this.voiceEngine.speakDutchTutor(
+        `Hoi ${this.tutor.vocative()}!`,
+        this.level === 7 ? this.activeReadingItem?.target : null,
+      );
+    }
+  }
+
   stepLevel(delta: number) {
     return this.flow.stepLevel(delta);
   }

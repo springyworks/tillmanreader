@@ -4,9 +4,15 @@ interface LabSnapshot {
   level: number;
   drawerState: number;
   trialCount: number;
+  calmFadeUnlocked: boolean;
+  activeNickname: string;
   visorOffsetY: number;
   handleX: number;
   handleY: number;
+  visorX: number;
+  visorY: number;
+  goalCenterX: number;
+  goalCenterY: number;
   targetX: number;
   targetY: number;
   canvasLeft: number;
@@ -20,6 +26,11 @@ interface LabWindow {
     level: number;
     drawerState: number;
     telemetry: { trials: unknown[] };
+    persistence: { activeNickname: string; activeSlug: string };
+    goalMemory: { calmFadeUnlocked: boolean; initialShowMs: number };
+    tutor: { tickers: Array<{ seq: number; summary: string }> };
+    feedback: { entries: Array<{ guiId: string; comment: string }> };
+    arenaRenderer: { lastGoalCenterRect: { x: number; y: number; w: number; h: number } | null };
     scoopVisor: {
       offsetY: number;
       handleX: number;
@@ -34,7 +45,7 @@ interface LabWindow {
 }
 
 test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
-  test('launches directly into Tillmann Reader with 14/14 watchdog checks passing', async ({
+  test('launches clean for a fresh learner with Embedded Tutor steady hold, Goal Center dock & 14/14 watchdog pass', async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -44,6 +55,7 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
 
     await expect(page.locator('#watchdogText')).toHaveText('0 ERR • 14/14 PASS');
     await expect(page.locator('#telemetryDrawer')).toHaveAttribute('data-state', '0');
+    await expect(page.locator('#btnHumanTutor')).toBeVisible();
 
     const viewportCheck = await page.evaluate(() => {
       const header = document.getElementById('topHeader')?.getBoundingClientRect();
@@ -55,22 +67,34 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
       const win = window as unknown as LabWindow;
       const app = win.labApp;
       if (!header || !arena || !drawer || !handleGrip || !app) return null;
+      const goalRect = app.arenaRenderer.lastGoalCenterRect;
 
       return {
         level: app.level,
+        trialCount: app.telemetry.trials.length,
+        calmFadeUnlocked: app.goalMemory.calmFadeUnlocked,
+        activeNickname: app.persistence.activeNickname,
         vw: window.innerWidth,
         vh: window.innerHeight,
-        headerBottom: header.bottom,
         arenaHeight: arena.height,
         drawerBottom: drawer.bottom,
         drawerRight: drawer.right,
         gripWidth: handleGrip.width,
-        bubblesInside: app.readingTargets.every(
+        visorDockedInGoal:
+          goalRect !== null &&
+          Math.abs(app.scoopVisor.visorX - (goalRect.x + goalRect.w / 2)) <= 6 &&
+          app.scoopVisor.visorY >= goalRect.y &&
+          app.scoopVisor.visorY <= goalRect.y + goalRect.h,
+        bubblesInsideAndClear: app.readingTargets.every(
           (rt) =>
             rt.x - rt.r >= 0 &&
             rt.x + rt.r <= arena.width &&
             rt.y - rt.r >= 0 &&
-            rt.y + rt.r <= arena.height,
+            rt.y + rt.r <= arena.height &&
+            (!goalRect ||
+              rt.x + rt.r < goalRect.x ||
+              rt.x - rt.r > goalRect.x + goalRect.w ||
+              rt.y - rt.r > goalRect.y + goalRect.h),
         ),
       };
     });
@@ -78,14 +102,18 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
     expect(errors).toEqual([]);
     expect(viewportCheck).not.toBeNull();
     expect(viewportCheck?.level).toBe(7);
+    expect(viewportCheck?.trialCount).toBe(0);
+    expect(viewportCheck?.calmFadeUnlocked).toBe(false);
+    expect(viewportCheck?.activeNickname).toBe('Beste leerling');
     expect(viewportCheck?.arenaHeight).toBeGreaterThan(150);
     expect(viewportCheck?.drawerBottom).toBeLessThanOrEqual((viewportCheck?.vh ?? 0) + 1);
     expect(viewportCheck?.drawerRight).toBeLessThanOrEqual((viewportCheck?.vw ?? 0) + 1);
     expect(viewportCheck?.gripWidth).toBeGreaterThan(40);
-    expect(viewportCheck?.bubblesInside).toBe(true);
+    expect(viewportCheck?.visorDockedInGoal).toBe(true);
+    expect(viewportCheck?.bubblesInsideAndClear).toBe(true);
   });
 
-  test('scores a reading trial when dragging the Anti-FFP Scoop-Visor onto the target letter', async ({
+  test('does NOT teleport Scoop-Visor on stray arena taps and drags smoothly from Goal Center to score a hit', async ({
     page,
   }) => {
     await page.goto('/');
@@ -95,15 +123,22 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
       const app = (window as unknown as LabWindow).labApp;
       if (!app) return null;
       const target = app.readingTargets.find((rt) => rt.isTarget);
-      if (!target) return null;
+      const gc = app.arenaRenderer.lastGoalCenterRect;
+      if (!target || !gc) return null;
       const rect = app.canvas.getBoundingClientRect();
       return {
         level: app.level,
         drawerState: app.drawerState,
         trialCount: app.telemetry.trials.length,
+        calmFadeUnlocked: app.goalMemory.calmFadeUnlocked,
+        activeNickname: app.persistence.activeNickname,
         visorOffsetY: app.scoopVisor.offsetY,
         handleX: app.scoopVisor.handleX,
         handleY: app.scoopVisor.handleY,
+        visorX: app.scoopVisor.visorX,
+        visorY: app.scoopVisor.visorY,
+        goalCenterX: gc.x + gc.w / 2,
+        goalCenterY: gc.y + gc.h / 2,
         targetX: target.x,
         targetY: target.y,
         canvasLeft: rect.left,
@@ -116,10 +151,20 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
     expect(before).not.toBeNull();
     if (!before) return;
 
-    const startClientX = before.canvasLeft + before.handleX;
-    const startClientY = before.canvasTop + before.handleY;
-    const endClientX = before.canvasLeft + before.targetX;
-    const endClientY = before.canvasTop + before.targetY + before.visorOffsetY;
+    // 1. Tap far away at bottom-left corner of arena -> Scoop-Visor MUST stay docked at Goal Center!
+    await page.mouse.click(before.canvasLeft + 24, before.canvasTop + before.canvasHeight - 24);
+    const afterStrayTap = await page.evaluate(() => {
+      const sv = (window as unknown as LabWindow).labApp?.scoopVisor;
+      return sv ? { handleX: sv.handleX, handleY: sv.handleY } : null;
+    });
+    expect(afterStrayTap?.handleX).toBe(before.handleX);
+    expect(afterStrayTap?.handleY).toBe(before.handleY);
+
+    // 2. Grab the Thumb Pad docked below Goal Center (slightly off-center to verify zero grab snap!) and drag onto target
+    const startClientX = before.canvasLeft + before.handleX + 8;
+    const startClientY = before.canvasTop + before.handleY + 6;
+    const endClientX = before.canvasLeft + before.targetX + 8;
+    const endClientY = before.canvasTop + before.targetY + before.visorOffsetY + 6;
 
     await page.mouse.move(startClientX, startClientY);
     await page.mouse.down();
@@ -129,10 +174,68 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
     await page.mouse.move(endClientX, endClientY, { steps: 6 });
     await page.mouse.up();
 
-    const afterCount = await page.evaluate(
-      () => (window as unknown as LabWindow).labApp?.telemetry.trials.length ?? 0,
-    );
-    expect(afterCount).toBe(before.trialCount + 1);
+    const afterHit = await page.evaluate(() => {
+      const app = (window as unknown as LabWindow).labApp;
+      return app
+        ? { trials: app.telemetry.trials.length, tickers: app.tutor.tickers.length }
+        : null;
+    });
+    expect(afterHit?.trials).toBe(before.trialCount + 1);
+    expect(afterHit?.tickers).toBeGreaterThanOrEqual(2);
+  });
+
+  test('supports Ctrl+Alt+G accumulative GUI_ID capture, Human-Tutor tickers & isolated kid profiles', async ({
+    page,
+  }) => {
+    await page.goto('/');
+
+    // 1. Hover over the Top Goal Center box on Canvas (left of center visor ring) and press Ctrl+Alt+G
+    const goalScreenPt = await page.evaluate(() => {
+      const app = (window as unknown as LabWindow).labApp;
+      const gc = app?.arenaRenderer.lastGoalCenterRect;
+      const rect = app?.canvas.getBoundingClientRect();
+      if (!gc || !rect) return null;
+      return { x: rect.left + gc.x + 18, y: rect.top + gc.y + gc.h / 2 };
+    });
+    expect(goalScreenPt).not.toBeNull();
+    if (!goalScreenPt) return;
+
+    await page.mouse.move(goalScreenPt.x, goalScreenPt.y);
+    await page.keyboard.press('Control+Alt+KeyG');
+    await expect(page.locator('#quickGuiCommentModal')).toBeVisible();
+    await expect(page.locator('#quickGuiTargetId')).toHaveText('CANVAS_GOAL_CENTER_BOX');
+    await page.locator('#quickGuiCommentInput').fill('Top fading goal center anchor');
+    await page.locator('#quickGuiCommentInput').press('Enter');
+    await expect(page.locator('#quickGuiCommentModal')).toBeHidden();
+
+    // 2. Hover over the Hero Audio DOM button and press Ctrl+Alt+G again -> must ACCUMULATE!
+    const audioBox = await page.locator('#btnHeroAudio').boundingBox();
+    expect(audioBox).not.toBeNull();
+    if (audioBox) {
+      await page.mouse.move(audioBox.x + audioBox.width / 2, audioBox.y + audioBox.height / 2);
+      await page.keyboard.press('Control+Alt+KeyG');
+      await expect(page.locator('#quickGuiTargetId')).toHaveText('GUI_HERO_AUDIO');
+      await page.locator('#quickGuiCommentInput').fill('Dutch voice toggle button');
+      await page.locator('#quickGuiCommentInput').press('Enter');
+    }
+
+    // 3. Open small Human-Tutor button, react to a live Tutor Ticker, and create a grandchild profile
+    await page.locator('#btnHumanTutor').click();
+    await expect(page.locator('#humanTutorModal')).toBeVisible();
+    await page.locator('#tutorTickerList button').first().click();
+
+    await page.locator('#learnerNicknameInput').fill('Sem');
+    await page.locator('#btnSaveLearnerNickname').click();
+    await expect(page.locator('#learnerNameLabel')).toHaveText('Sem');
+
+    const bufValue = await page.locator('#humanTutorBufferTextarea').inputValue();
+    expect(bufValue).toContain('3 items');
+    expect(bufValue).toContain('CANVAS_GOAL_CENTER_BOX');
+    expect(bufValue).toContain('GUI_HERO_AUDIO');
+    expect(bufValue).toContain('TUTOR_TICKER_');
+
+    await page.locator('#btnCloseHumanTutorModal').click();
+    await expect(page.locator('#humanTutorModal')).toBeHidden();
   });
 
   test('opens Scopes & 100-Math drawer cleanly without overlapping panels and builds standalone HTML', async ({

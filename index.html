@@ -17,16 +17,16 @@
   <canvas id="guiDoodleOverlay"></canvas>
 
   <!-- KID-CLEAN TOP BAR: PREV, VOICE, FULLSCREEN, STAGE BADGE & NEXT (ZERO DEV CLUTTER!) -->
-  <header id="topHeader" class="shrink-0 bg-slate-950 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between gap-2 z-30">
+  <header id="topHeader" data-gui-id="GUI_TOP_HEADER" data-gui-label="Top Kid Navigation Header" class="shrink-0 bg-slate-950 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between gap-2 z-30">
     <div class="flex items-center gap-2">
       <button id="btnPrevLevel" data-gui-id="GUI_NAV_PREV" data-gui-label="Hero Prev Level" class="hero-nav-btn" title="Previous Stage (Shortcut: [ or PageUp)">
         <span>◀</span><span>PREV</span>
       </button>
 
       <!-- GIANT TOP AUDIO TOGGLE (AUTO-UNLOCKS ON FIRST ARENA TOUCH FOR KIDS!) -->
-      <button id="btnHeroAudio" data-gui-id="GUI_HERO_AUDIO" data-gui-label="Master Human Voice &amp; Funny Sound Engine Toggle" class="hero-audio-btn audio-on" title="Funny Human Vocal-Tract &amp; Animal Imitation Synthesizer (Auto-unlocks on first touch!)">
+      <button id="btnHeroAudio" data-gui-id="GUI_HERO_AUDIO" data-gui-label="Master Dutch Voice &amp; Funny Sound Engine Toggle" class="hero-audio-btn audio-on" title="Nederlandse Stem &amp; Klankgrappen Synthesizer (Start automatisch bij eerste aanraking!)">
         <span id="heroAudioIcon">🔊</span>
-        <span id="heroAudioText">VOICE: READY!</span>
+        <span id="heroAudioText">STEM: KLAAR!</span>
       </button>
 
       <!-- GIANT FULLSCREEN BUTTON -->
@@ -39,7 +39,7 @@
     <div class="flex flex-col items-center min-w-0 px-2">
       <div class="flex items-center gap-2">
         <span class="text-xs font-bold uppercase tracking-wider text-amber-300 mono">🚀 TILLMANN READER</span>
-        <span id="envelopePhasePill" class="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-xs font-bold mono">STEP 5/5 (5/6) • 🌅 FADE ACTIVE (0.84s hold → 1.1s fade)</span>
+        <span id="envelopePhasePill" data-gui-id="GUI_ENVELOPE_PHASE_PILL" data-gui-label="Goal Throttle &amp; Phase Status Pill" class="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-xs font-bold mono">STEP 5/5 • 👁️ BASELINE CHECK (0/5 unfaded)</span>
       </div>
       <div id="activeStageBadge" data-gui-id="GUI_STAGE_BADGE" data-gui-label="Current Stage Indicator" class="text-xs font-bold mono text-cyan-300 truncate mt-0.5">Phase 5/5 • Reading Stage 1/6 (Pre-Attentive Pop-Out)</div>
     </div>
@@ -147,34 +147,121 @@
     </div>
   </div>
 
+  <!-- QUICK CTRL+ALT+G / PICK-GUI ACCUMULATIVE COMMENT DIALOG -->
+  <div id="quickGuiCommentModal" data-gui-id="GUI_QUICK_COMMENT_MODAL" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3" style="background: rgba(2, 6, 23, 0.82); backdrop-filter: blur(8px);">
+    <div class="bg-slate-900 border-2 border-purple-400 rounded-xl p-4 w-full shadow-xl space-y-2.5" style="max-width: 520px;">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="px-2 py-0.5 rounded bg-purple-400 text-slate-950 text-xs font-bold mono">CTRL+ALT+G</span>
+          <span id="quickGuiTargetId" class="text-sm font-bold text-emerald-300 mono truncate">CANVAS_GOAL_CENTER_BOX</span>
+        </div>
+        <span id="quickGuiAccumCount" class="text-xs text-amber-300 mono shrink-0">Buffer: 0 items</span>
+      </div>
+      <div id="quickGuiTargetDesc" class="text-xs text-slate-300 mono bg-slate-950 border border-slate-800 rounded p-2"></div>
+      <input id="quickGuiCommentInput" data-gui-id="GUI_QUICK_COMMENT_INPUT" type="text" placeholder="Typ je opmerking over dit GUI-element &amp; druk Enter (accumulatief naar klembord)..." class="w-full bg-slate-950 text-slate-100 border border-cyan-400 rounded-lg px-3 py-2 text-xs mono" style="outline: none; user-select: text; -webkit-user-select: text;" />
+      <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
+        <button id="btnQuickGuiOpenTutor" data-gui-id="GUI_QUICK_OPEN_TUTOR" type="button" class="ergo-sub-btn border-purple-400 text-purple-300">🧑‍🏫 Open Tutor Tickers</button>
+        <button id="btnQuickGuiCancel" data-gui-id="GUI_QUICK_CANCEL" type="button" class="ergo-sub-btn border-rose-500 text-rose-300">✕ Annuleer</button>
+        <button id="btnQuickGuiSave" data-gui-id="GUI_QUICK_SAVE" type="button" class="hero-nav-btn next-hero" style="min-height:36px;font-size:12px;padding:4px 14px;">➕ Voeg toe &amp; Kopieer Buffer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HUMAN-TUTOR FEEDBACK, LIVE TUTOR TICKERS & LEARNER NICKNAME PROFILES MODAL -->
+  <div id="humanTutorModal" data-gui-id="GUI_HUMAN_TUTOR_MODAL" class="hidden fixed inset-0 z-50 bg-slate-950 flex flex-col p-2.5" style="background: rgba(2, 6, 23, 0.95); backdrop-filter: blur(12px);">
+    <div class="bg-slate-900 border-2 border-purple-400 rounded-xl p-3 flex flex-col w-full h-full shadow-xl overflow-y-auto space-y-2.5">
+      <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800 shrink-0">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="px-2 py-0.5 rounded bg-purple-400 text-slate-950 text-xs font-bold mono">🧑‍🏫 HUMAN-TUTOR</span>
+            <h2 class="text-xs font-bold text-slate-100 mono">Ingebouwde Tutor Tickers &amp; Klembord-Feedback</h2>
+          </div>
+          <p id="humanTutorLiveStatus" class="text-xs text-cyan-300 mono mt-1 leading-snug">
+            Leerling: "Beste leerling" • Doel blijft rustig zichtbaar (0/5)
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button id="btnStartGuiPick" data-gui-id="GUI_PICK_ELEMENT_BTN" type="button" class="ergo-sub-btn border-cyan-400 text-cyan-300">
+            🎯 Tik GUI aan
+          </button>
+          <button id="btnCopyHumanTutorBuffer" data-gui-id="GUI_COPY_TUTOR_BUFFER" type="button" class="hero-nav-btn next-hero" style="min-height:32px;font-size:12px;padding:3px 10px;">
+            📋 Kopieer (<span id="humanTutorBufferCount">0</span>)
+          </button>
+          <button id="btnClearHumanTutorBuffer" data-gui-id="GUI_CLEAR_TUTOR_BUFFER" type="button" class="ergo-sub-btn border-rose-500 text-rose-300">
+            🗑️ Wis
+          </button>
+          <button id="btnCloseHumanTutorModal" data-gui-id="GUI_CLOSE_TUTOR_MODAL" type="button" class="ergo-sub-btn border-rose-500 text-rose-300">
+            ✕ Sluit
+          </button>
+        </div>
+      </div>
+
+      <!-- ROW A: LEARNER NICKNAME PROFILES (DECOUPLED FROM ANONYMOUS MACHINE MEMORY!) -->
+      <div class="bg-slate-950 border border-slate-800 rounded-lg p-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span class="text-xs font-bold text-amber-300 mono">👶 PROFIEL:</span>
+          <div id="learnerProfileChips" class="flex flex-wrap items-center gap-1"></div>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <input id="learnerNicknameInput" data-gui-id="GUI_LEARNER_NAME_INPUT" type="text" placeholder="Naam kleinkind..." class="bg-slate-900 text-slate-100 border border-slate-700 rounded px-2 py-1 text-xs mono" style="width: 145px; user-select: text; -webkit-user-select: text;" />
+          <button id="btnSaveLearnerNickname" data-gui-id="GUI_SAVE_LEARNER_NAME" type="button" class="ergo-sub-btn border-emerald-400 text-emerald-300">➕ Nieuw</button>
+          <button id="btnToggleEmbeddedTutor" data-gui-id="GUI_TOGGLE_EMBEDDED_TUTOR" type="button" class="ergo-sub-btn active border-purple-400 text-purple-300">🤖 Tutor: ACTIEF</button>
+        </div>
+      </div>
+
+      <!-- ROW B & C: LIVE TUTOR TICKERS + ACCUMULATIVE CLIPBOARD BUFFER -->
+      <div class="grid gap-2.5 shrink-0" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5 flex flex-col">
+          <span class="text-xs font-bold uppercase text-emerald-300 mono mb-1.5">📡 Live Ingebouwde Tutor Tickers (Klik om feedback te geven)</span>
+          <div class="flex items-center gap-1.5 mb-2">
+            <input id="generalTutorNoteInput" data-gui-id="GUI_GENERAL_TUTOR_NOTE_INPUT" type="text" placeholder="Toelichting bij ticker of algemene tutor-tip..." class="flex-1 bg-slate-900 text-slate-100 border border-slate-700 rounded px-2 py-1 text-xs mono" style="min-width: 0; user-select: text; -webkit-user-select: text;" />
+            <button id="btnAddGeneralTutorNote" data-gui-id="GUI_ADD_GENERAL_NOTE" type="button" class="ergo-sub-btn border-emerald-400 text-emerald-300 shrink-0">➕ Tip</button>
+          </div>
+          <div id="tutorTickerList" data-gui-id="GUI_TUTOR_TICKER_LIST" class="overflow-y-auto space-y-1.5 pr-1" style="min-height: 175px; max-height: 300px;"></div>
+        </div>
+
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5 flex flex-col">
+          <div class="flex flex-wrap items-center justify-between gap-1 mb-1.5">
+            <span class="text-xs font-bold uppercase text-purple-300 mono">📋 Accumulatieve Klembord-Buffer</span>
+            <span class="text-[10px] text-slate-400 mono">Ctrl+Alt+G telt hier op</span>
+          </div>
+          <textarea id="humanTutorBufferTextarea" data-gui-id="GUI_TUTOR_BUFFER_TEXTAREA" readonly="" class="w-full bg-slate-900 text-emerald-300 border border-slate-800 rounded p-2 mono text-xs" style="min-height: 195px; resize: vertical; user-select: text; -webkit-user-select: text;"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- MAIN INTERACTIVE ARENA: 100% UNOBSTRUCTED SAFE ACTION FIELD (ZERO FLOATING BLOCKERS) -->
-  <main id="arenaContainer" class="relative flex-1 w-full overflow-hidden bg-slate-950">
-    <canvas id="gameArena" class="w-full h-full block"></canvas>
+  <main id="arenaContainer" data-gui-id="GUI_ARENA_CONTAINER" data-gui-label="Main Play Arena Container" class="relative flex-1 w-full overflow-hidden bg-slate-950">
+    <canvas id="gameArena" data-gui-id="CANVAS_ARENA_FIELD" class="w-full h-full block"></canvas>
 
     <!-- Non-intrusive top-right toast notification (pointer-events-none) -->
-    <div id="gestureToast" class="bg-slate-900/95 border-2 border-amber-400 rounded-lg px-3 py-1.5 shadow-xl transition-all hidden">
-      <div id="gestureToastTitle" class="text-sm font-bold text-emerald-300 mono">🛡️ TRY AGAIN: Look for "O"</div>
-      <div id="gestureToastSub" class="text-xs text-slate-200">Top goal re-illuminated steadily to help!</div>
+    <div id="gestureToast" data-gui-id="GUI_TOAST_BANNER" class="bg-slate-900/95 border-2 border-amber-400 rounded-lg px-3 py-1.5 shadow-xl transition-all hidden">
+      <div id="gestureToastTitle" class="text-sm font-bold text-emerald-300 mono">🛡️ NOG EEN KEER: Zoek "O"</div>
+      <div id="gestureToastSub" class="text-xs text-slate-200">Het doel bovenaan blijft rustig verlicht!</div>
     </div>
   </main>
 
   <!-- BOTTOM PULL-UP / PULL-DOWN AFFORDANCE TELEMETRY DRAWER (HIDDEN BY DEFAULT: 42PX CALM BAR) -->
-  <section id="telemetryDrawer" data-state="0">
+  <section id="telemetryDrawer" data-gui-id="GUI_TELEMETRY_DRAWER" data-state="0">
     <!-- DRAGGABLE / CLICKABLE HANDLE BAR -->
     <div id="drawerHandle" data-gui-id="GUI_DRAWER_HANDLE" data-gui-label="Telemetry Drawer Handle" class="w-full bg-slate-900 border-b border-slate-800 px-3 flex items-center justify-between select-none transition" style="height: 42px; min-height: 42px;">
-      <!-- Left: Subtle Pull-up Handle & Live Grounding Summary -->
-      <div class="flex items-center gap-2.5 truncate">
+      <!-- Left: Subtle Pull-up Handle & Active Learner Nickname Button -->
+      <div class="flex items-center gap-2 truncate min-w-0">
         <div class="flex flex-col gap-1 py-1 shrink-0">
           <span class="w-5 h-0.5 bg-cyan-400 rounded" style="display:block;width:22px;height:2.5px;"></span>
           <span class="w-5 h-0.5 bg-slate-500 rounded" style="display:block;width:22px;height:2.5px;"></span>
         </div>
-        <span class="text-xs font-bold tracking-wider uppercase text-slate-300 mono truncate">
-          TILLMANN READER • GITHUB PAGES READY
-        </span>
+        <button id="btnLearnerProfile" data-gui-id="GUI_LEARNER_PROFILE" data-gui-label="Active Learner Nickname Profile Switcher" type="button" class="ergo-sub-btn border-amber-400 text-amber-300 truncate" style="min-height:28px;padding:2px 7px;font-size:11px;max-width:135px;" title="Kies of maak een eigen kind-profiel / roepnaam">
+          👶 <span id="learnerNameLabel">Beste leerling</span>
+        </button>
       </div>
-      <!-- Right: Always-Visible Copy JSON + Standalone Export + GitHub Deploy + 3-State Quick Affordance Buttons -->
+      <!-- Right: Compact Human-Tutor Button + Copy JSON + Standalone Export + GitHub Deploy + 3-State Buttons -->
       <div class="flex items-center gap-1.5 shrink-0" id="drawerStateBtns">
-        <button id="btnTopSavedJson" data-gui-id="GUI_TOP_COPY_JSON" data-gui-label="Inspect Auto-Save &amp; Copy JSON to Clipboard" class="ergo-sub-btn border-emerald-400 text-emerald-300" style="min-height:28px;padding:2px 8px;font-size:11px;background:rgba(16,185,129,0.22);">💾 SAVED S#1 (85tr) • 📋 COPY JSON</button>
+        <button id="btnHumanTutor" data-gui-id="GUI_HUMAN_TUTOR_BTN" data-gui-label="Small Human-Tutor Ticker &amp; Accumulative Clipboard Button" type="button" class="ergo-sub-btn border-purple-400 text-purple-200" style="min-height:28px;padding:2px 7px;font-size:11px;background:rgba(147,51,234,0.25);" title="Open Live Tutor Tickers &amp; Accumulative Feedback (Shortcut: Ctrl+Alt+G)">
+          🧑‍🏫 Tutor <span id="btnHumanTutorBadge" class="px-1 rounded bg-purple-400 text-slate-950 font-bold mono" style="font-size:10px;">1</span>
+        </button>
+        <button id="btnTopSavedJson" data-gui-id="GUI_TOP_COPY_JSON" data-gui-label="Inspect Auto-Save &amp; Copy JSON to Clipboard" class="ergo-sub-btn border-emerald-400 text-emerald-300" style="min-height:28px;padding:2px 8px;font-size:11px;background:rgba(16,185,129,0.22);">💾 Beste leerling (0tr) • 📋 JSON</button>
         <button id="btnStandaloneExport" data-gui-id="GUI_STANDALONE_HTML" data-gui-label="Download index.html for GitHub Pages" class="ergo-sub-btn border-cyan-400 text-cyan-300" style="min-height:28px;padding:2px 8px;font-size:11px;">
           📥 index.html
         </button>

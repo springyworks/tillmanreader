@@ -4,9 +4,9 @@ import { byId, maybeById } from '../../util/dom';
 /** Puts the scoop-visor handle at (x, y), kept inside the safe arena, with the visor floating above it. */
 function placeScoopHandle(app: LabApp, x: number, y: number): void {
   const sv = app.scoopVisor;
-  const { safeLeft, safeTop, safeRight, safeBottom } = app.layout.getSafeArenaCenter();
+  const { safeLeft, safeRight, safeBottom } = app.layout.getSafeArenaCenter();
   sv.handleX = Math.max(safeLeft + 16, Math.min(safeRight - 16, x));
-  sv.handleY = Math.max(safeTop + sv.offsetY + 14, Math.min(safeBottom - 10, y));
+  sv.handleY = Math.max(sv.offsetY + 16, Math.min(safeBottom - 10, y));
   sv.visorX = sv.handleX;
   sv.visorY = sv.handleY - sv.offsetY;
 }
@@ -48,16 +48,17 @@ function latchBallisticPhases(app: LabApp, aimX: number, aimY: number, now: numb
 }
 
 function onArenaPointerMove(app: LabApp, e: PointerEvent): void {
+  if (app.guiPickModeActive) return;
   const now = performance.now();
   const sv = app.scoopVisor;
   const dragging = sv.enabled && sv.isDragging;
   if (dragging && sv.pointerId !== null && e.pointerId !== sv.pointerId) return;
 
-  // Update Anti-FFP Scoop-Visor coordinates if dragging (or following mouse when button is down)
+  // Update Anti-FFP Scoop-Visor coordinates with preserved grab offset (zero jump/snap!)
   if (dragging) {
     const prevVx = sv.visorX;
     const prevVy = sv.visorY;
-    placeScoopHandle(app, e.offsetX, e.offsetY);
+    placeScoopHandle(app, e.offsetX - sv.grabOffsetX, e.offsetY - sv.grabOffsetY);
     sv.dragPathLen += Math.hypot(sv.visorX - prevVx, sv.visorY - prevVy);
     app.layout.updateScoopVisorCandidate();
   }
@@ -92,7 +93,7 @@ function onArenaPointerMove(app: LabApp, e: PointerEvent): void {
 
 /**
  * KID-FIRST INSTANT ENGAGEMENT, on the very first touch/click inside the game arena:
- * 1) Unlock WebAudio Funny Phonetic Synthesizer & speak the active target letter/word!
+ * 1) Unlock WebAudio Funny Phonetic Synthesizer & greet the learner warmly in Dutch!
  * 2) If on mobile/tablet (and not blocked by an iframe), automatically enter Fullscreen!
  */
 function unlockOnFirstTouch(app: LabApp, e: PointerEvent): void {
@@ -101,9 +102,15 @@ function unlockOnFirstTouch(app: LabApp, e: PointerEvent): void {
   if (app.voiceEngine.enabled) {
     app.voiceEngine.ensureContext();
     const heroAudioText = maybeById('heroAudioText');
-    if (heroAudioText) heroAudioText.textContent = 'VOICE: ON';
+    if (heroAudioText) heroAudioText.textContent = 'STEM: AAN';
+    const who = app.tutor.vocative();
     if (app.level === 7 && app.activeReadingItem) {
-      app.voiceEngine.speakReadingItem(app.activeReadingItem, 'ASKING');
+      app.voiceEngine.speakDutchTutor(
+        `Hoi ${who}! Pak het blauwe handvat bovenaan en sleep rustig.`,
+        app.activeReadingItem.target,
+      );
+    } else {
+      app.voiceEngine.speakDutchTutor(`Hoi ${who}! Veel plezier!`);
     }
   }
   const isMobileTouch = window.innerWidth < 900 || e.pointerType === 'touch';
@@ -129,42 +136,87 @@ function tapEnablesVoice(app: LabApp, e: PointerEvent): boolean {
   const isOn = app.voiceEngine.toggleAudio();
   maybeById('btnHeroAudio')?.classList.toggle('audio-on', isOn);
   byId('heroAudioIcon').textContent = isOn ? '🔊' : '🔇';
-  byId('heroAudioText').textContent = 'VOICE & FX: ON';
+  byId('heroAudioText').textContent = 'STEM & FX: AAN';
   app.hud.showToast(
-    '🔊 FUNNY PHONETIC VOICES ENABLED!',
-    'Playing "kjiuueehh!" (q) & expressive human vocal-tract jokes!',
+    '🔊 NEDERLANDSE STEM & KLANKGRAPPEN AAN!',
+    'De ingebouwde tutor moedigt nu in het Nederlands aan!',
     'border-amber-400',
   );
   return true;
 }
 
-/** Starts a scoop-visor drag: grabs (or re-seats) the handle and arms the ballistic-phase latches. */
+let strayTapCount = 0;
+
+/**
+ * Starts a scoop-visor drag ONLY when grabbing the Scoop Pad, Upper Visor, or Goal Center Dock.
+ * Never teleports the Scoop-Visor to distant stray taps across the arena!
+ */
 function grabScoopVisor(app: LabApp, e: PointerEvent, now: number): void {
   const sv = app.scoopVisor;
+  const distToHandle = Math.hypot(e.offsetX - sv.handleX, e.offsetY - sv.handleY);
+  const distToVisor = Math.hypot(e.offsetX - sv.visorX, e.offsetY - sv.visorY);
+  const goalRect = app.arenaRenderer.lastGoalCenterRect;
+  const inGoalBox =
+    goalRect !== null &&
+    e.offsetX >= goalRect.x - 12 &&
+    e.offsetX <= goalRect.x + goalRect.w + 12 &&
+    e.offsetY >= goalRect.y - 12 &&
+    e.offsetY <= goalRect.y + goalRect.h + 16 &&
+    Math.hypot(
+      sv.visorX - (goalRect.x + goalRect.w / 2),
+      sv.visorY - (goalRect.y + goalRect.h / 2),
+    ) <= 75;
+
+  const withinGrabZone =
+    distToHandle <= sv.handleR * 1.95 || distToVisor <= sv.visorR * 1.7 || inGoalBox;
+
+  if (!withinGrabZone) {
+    // Do NOT jump/teleport the visor! Pulse the Goal-Center handle and guide the learner gently.
+    sv.nudgePulse = 1.0;
+    strayTapCount++;
+    app.hud.showToast(
+      '👆 PAK HET BLAUWE HANDVAT BOVENAAN!',
+      'Sleep vanaf het doel-vak bovenaan rustig naar de juiste letter.',
+      'border-amber-400',
+    );
+    if (strayTapCount >= 2) {
+      strayTapCount = 0;
+      const who = app.tutor.vocative();
+      const hint = `Pak eerst het blauwe handvat bij het doel bovenaan, ${who}, en sleep het naar beneden.`;
+      app.tutor.logExternalEvent(
+        'GIMBAL_ASSIST',
+        `L${app.level}`,
+        'Losse tik buiten het Scoop-handvat — handvat bij doel-centrum oplichtend gemaakt.',
+        hint,
+        `tap=(${Math.round(e.offsetX)},${Math.round(e.offsetY)})`,
+      );
+      app.voiceEngine.speakDutchTutor(hint);
+    } else {
+      app.voiceEngine.playPreset('ASK_GLISS');
+    }
+    return;
+  }
+
+  strayTapCount = 0;
   sv.isDragging = true;
   sv.pointerId = e.pointerId;
   sv.dragStartTime = now;
   sv.dragPathLen = 0;
+  // Preserve exact finger-to-handle offset so the first pointermove never snaps!
+  sv.grabOffsetX = e.offsetX - sv.handleX;
+  sv.grabOffsetY = e.offsetY - sv.handleY;
 
-  const distToHandle = Math.hypot(e.offsetX - sv.handleX, e.offsetY - sv.handleY);
-  if (distToHandle > sv.handleR * 1.8) {
-    placeScoopHandle(app, e.offsetX, e.offsetY);
-  }
   app.cursor = { x: sv.visorX, y: sv.visorY };
-  // Anchor ballistic chord start to where the Scoop-Visor grab began, and let real drag motion trigger moveOnsetTime!
   app.trialStartPos = { x: sv.visorX, y: sv.visorY };
-  if (app.moveOnsetTime === 0 && now - app.trialStartTime > 90) {
-    app.moveOnsetTime = now;
-  }
   app.trialPeakSpeed = 0;
   app.peakVelTime = 0;
   app.decelOnsetTime = 0;
   app.layout.updateScoopVisorCandidate();
 
-  // In Level 3 Spiral, grabbing & placing the Visor on START immediately activates the spiral run
+  // In Level 3 Spiral, grabbing the Visor at START immediately activates the spiral run
   if (app.level === 3 && app.spiral.path.length > 0 && !app.spiral.active) {
     const startPt = app.spiral.path[0];
-    if (Math.hypot(sv.visorX - startPt.x, sv.visorY - startPt.y) <= startPt.w * 1.8) {
+    if (Math.hypot(sv.visorX - startPt.x, sv.visorY - startPt.y) <= startPt.w * 2.0) {
       app.spiral.active = true;
       app.spiral.startTime = now;
       app.spiral.progress = 0;
@@ -181,6 +233,7 @@ function grabScoopVisor(app: LabApp, e: PointerEvent, now: number): void {
 }
 
 function onArenaPointerDown(app: LabApp, e: PointerEvent): void {
+  if (app.guiPickModeActive) return;
   const now = performance.now();
   const sv = app.scoopVisor;
   if (sv.enabled && sv.isDragging && sv.pointerId !== null && e.pointerId !== sv.pointerId) {
@@ -191,7 +244,7 @@ function onArenaPointerDown(app: LabApp, e: PointerEvent): void {
 
   app.telemetry.recordDown(e.offsetX, e.offsetY, now);
 
-  // In L1A Zero-Move Center Tap, allow instant hair-trigger tap OR scoop grab
+  // In L1A Zero-Move Center Tap, allow instant hair-trigger tap
   if (app.level === 1 && app.l1Mode === 'zero') {
     app.cursor = { x: e.offsetX, y: e.offsetY };
     app.hits.handleArenaClick(e.offsetX, e.offsetY, now);
@@ -208,6 +261,7 @@ function onArenaPointerDown(app: LabApp, e: PointerEvent): void {
 
 /** LIFT FINGER TO DROP (`pointerup` on canvas) when Scoop-Visor is active! */
 function onArenaPointerUp(app: LabApp, e: PointerEvent): void {
+  if (app.guiPickModeActive) return;
   const now = performance.now();
   const sv = app.scoopVisor;
   if (!sv.enabled || !sv.isDragging) return;
@@ -215,6 +269,8 @@ function onArenaPointerUp(app: LabApp, e: PointerEvent): void {
 
   sv.isDragging = false;
   sv.pointerId = null;
+  sv.grabOffsetX = 0;
+  sv.grabOffsetY = 0;
   try {
     app.canvas.releasePointerCapture(e.pointerId);
   } catch {
@@ -224,16 +280,26 @@ function onArenaPointerUp(app: LabApp, e: PointerEvent): void {
   // Visual drop ripple at the upper Scoop Visor crosshairs
   sv.dropRipples.push({ x: sv.visorX, y: sv.visorY, r: sv.visorR, alpha: 1.0 });
 
-  // If user dragged the Scoop-Visor (or aimed it over a target) and lifted their finger, drop at (visorX, visorY)!
+  // Evaluate drop strictly at the upper Scoop-Visor crosshairs (visorX, visorY)
   app.layout.updateScoopVisorCandidate();
   if (sv.hoveredCandidate) {
     app.hits.handleArenaClick(sv.visorX, sv.visorY, now);
-  } else if (sv.dragPathLen < 14 && now - sv.dragStartTime < 260) {
-    // Quick direct tap fallback if user tapped directly on a target without dragging
-    app.hits.handleArenaClick(e.offsetX, e.offsetY, now);
   } else {
-    // Dropped in empty space: play gentle questioning glissando
-    app.voiceEngine.playPreset('ASK_GLISS');
+    // Dropped in empty space: return cleanly to Goal Center dock & offer gentle tutor assist if repeated
+    app.layout.resetScoopVisorPosition();
+    const assist = app.tutor.recordEmptyVisorDrop(app.level, app.reading.uiFontScale);
+    if (assist.recommendedFontScale !== null) {
+      app.reading.uiFontScale = assist.recommendedFontScale;
+      const lbl = maybeById('lblUiScale');
+      if (lbl) lbl.textContent = `${Math.round(assist.recommendedFontScale * 100)}%`;
+      app.layout.enforceOnScreenGuard();
+    }
+    if (assist.dutchSpeech) {
+      app.hud.showToast('🔭 EVEN HELPEN MET STUREN', assist.dutchSpeech, 'border-cyan-400');
+      app.voiceEngine.speakDutchTutor(assist.dutchSpeech, app.activeReadingItem?.target);
+    } else {
+      app.voiceEngine.playPreset('ASK_GLISS');
+    }
   }
 }
 
@@ -244,7 +310,10 @@ function onArenaPointerCancel(app: LabApp, e: PointerEvent): void {
   if (sv.pointerId !== null && e.pointerId !== sv.pointerId) return;
   sv.isDragging = false;
   sv.pointerId = null;
+  sv.grabOffsetX = 0;
+  sv.grabOffsetY = 0;
   sv.hoveredCandidate = null;
+  app.layout.resetScoopVisorPosition();
 }
 
 /** Arena canvas pointer telemetry with the distance-gated ballistic latch and scoop-visor drag/drop. */

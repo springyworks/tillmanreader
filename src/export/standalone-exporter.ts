@@ -28,7 +28,13 @@ export class StandaloneExporter {
 
     docClone.querySelector('#bakedTillmannState')?.remove();
 
-    for (const sel of ['#jsonInspectorModal', '#cloudShareModal', '#gestureToast']) {
+    for (const sel of [
+      '#jsonInspectorModal',
+      '#cloudShareModal',
+      '#gestureToast',
+      '#humanTutorModal',
+      '#quickGuiCommentModal',
+    ]) {
       docClone.querySelector(sel)?.classList.add('hidden');
     }
 
@@ -38,13 +44,21 @@ export class StandaloneExporter {
       drawerClone.classList.remove('proximity-glow');
     }
 
-    for (const sel of ['#metrics100Grid', '#guiElementsGrid', '#jsonModalCards']) {
+    for (const sel of [
+      '#metrics100Grid',
+      '#guiElementsGrid',
+      '#jsonModalCards',
+      '#tutorTickerList',
+      '#learnerProfileChips',
+    ]) {
       const el = docClone.querySelector(sel);
       if (el) el.innerHTML = '';
     }
 
     const taClone = docClone.querySelector<HTMLTextAreaElement>('#jsonModalTextarea');
     if (taClone) taClone.value = '';
+    const bufClone = docClone.querySelector<HTMLTextAreaElement>('#humanTutorBufferTextarea');
+    if (bufClone) bufClone.value = '';
 
     docClone.querySelector('#btnHeroAudio')?.classList.add('audio-on');
     const audioIconClone = docClone.querySelector('#heroAudioIcon');

@@ -136,7 +136,7 @@ export class HitProcessor {
     }
   }
 
-  /** Level 7: the first bubble under the tap is evaluated by the adaptive reading engine. */
+  /** Level 7: the first bubble under the drop is evaluated by the Embedded Tutor & Adaptive Reading Engine. */
   private tapReadingBubble(x: number, y: number, now: number): void {
     const rt = this.app.readingTargets.find((b) => Math.hypot(x - b.x, y - b.y) <= b.r * 1.28);
     if (!rt) return;
@@ -147,15 +147,54 @@ export class HitProcessor {
       this.app.moveOnsetTime > this.app.trialStartTime
         ? Math.max(70, Math.round(this.app.moveOnsetTime - this.app.trialStartTime - hw))
         : Math.round(Math.min(mt * 0.42, this.app.telemetry.rt0BaselineMs + 160));
+    const pull = this.distractorPull();
+    const radialNormPct = Math.min(1.0, Math.hypot(x - rt.x, y - rt.y) / Math.max(8, rt.r));
 
-    const status = this.app.reading.evaluateTrial(rt.isTarget, brain, this.distractorPull(), mt);
+    // Update telemetry stats on AdaptiveReadingEngine (without letting its raw 3-hit rule override the Tutor!)
+    const prevAuto = this.app.reading.autoZPD;
+    this.app.reading.autoZPD = false;
+    this.app.reading.evaluateTrial(rt.isTarget, brain, pull, mt);
+    this.app.reading.autoZPD = prevAuto;
+
+    const targetLabel = this.app.activeReadingItem ? this.app.activeReadingItem.target : rt.text;
+    const outcome = this.app.tutor.evaluateReadingTrial(
+      {
+        hit: rt.isTarget,
+        readingStage: this.app.reading.stage,
+        mtMs: mt,
+        decodeMs: brain,
+        distractorPullPx: pull,
+        radialNormPct,
+        goalPeeks: this.app.goalMemory.trialPeekCount,
+        targetLabel,
+      },
+      this.app.reading.autoZPD,
+      this.app.goalMemory.mode,
+      this.app.telemetry.rt0BaselineMs,
+      this.app.telemetry.trials.length,
+      this.app.reading.uiFontScale,
+    );
+
+    this.app.reading.stage = outcome.nextStage;
+    this.app.goalMemory.stageUnfadedStreak = this.app.tutor.calmStreak;
+    this.app.goalMemory.autoStreak = this.app.tutor.calmStreak;
+    this.app.goalMemory.calmFadeUnlocked = outcome.fadeUnlocked;
+    this.app.goalMemory.initialShowMs = outcome.fadeHoldMs;
+    this.app.goalMemory.fadeDurationMs = outcome.fadeDurationMs;
+
+    if (outcome.recommendedFontScale !== null) {
+      this.app.reading.uiFontScale = outcome.recommendedFontScale;
+      const lbl = maybeById('lblUiScale');
+      if (lbl) lbl.textContent = `${Math.round(outcome.recommendedFontScale * 100)}%`;
+    }
+
     byId('navReadBadge').textContent = `S${this.app.reading.stage}`;
     byId('l7StageName').textContent = this.app.reading.getCurrentStageConfig().name;
 
     if (rt.isTarget) {
-      this.celebrateCorrectBubble(rt, x, y, now, status === 'PROMOTED');
+      this.celebrateCorrectBubble(rt, x, y, now, outcome.stageChanged, outcome.dutchCoachLine);
     } else {
-      this.bumpDistractor(rt);
+      this.bumpDistractor(rt, outcome.stageChanged, outcome.dutchCoachLine);
     }
   }
 
@@ -177,9 +216,11 @@ export class HitProcessor {
     x: number,
     y: number,
     now: number,
-    promoted: boolean,
+    stageChanged: 'PROMOTED' | 'STEPPED_BACK' | 'RETURNED_UP' | 'STEADY',
+    dutchCoachLine: string | null,
   ): void {
     const item = this.app.activeReadingItem;
+    // Play acoustic phonetic joke stinger; if Dutch tutor speaks, combine into one natural utterance!
     const jokeSub = this.app.voiceEngine.speakGraphemeOrWord(rt.text, 'CELEBRATE');
     if (this.app.semanticMorphEnabled && item) {
       this.app.activeMorphs.push({
@@ -193,16 +234,21 @@ export class HitProcessor {
         gazeDwellMs: 0,
       });
     }
-    this.countCorrectTrial();
 
-    if (promoted) {
-      this.app.goalMemory.stageUnfadedStreak = 0;
-      this.app.goalMemory.calmFadeUnlocked = false;
+    if (stageChanged === 'PROMOTED') {
       this.app.hud.showToast(
-        `🎉 PROMOTED TO STAGE ${this.app.reading.stage}!`,
-        this.app.reading.getCurrentStageConfig().name,
+        `🎉 KNAP GELEZEN! DOOR NAAR STAP ${this.app.reading.stage}/6!`,
+        dutchCoachLine || this.app.reading.getCurrentStageConfig().name,
         'border-emerald-400',
       );
+    } else if (stageChanged === 'RETURNED_UP') {
+      this.app.hud.showToast(
+        `🌟 WARM-UP KLAAR → TERUG NAAR STAP ${this.app.reading.stage}/6!`,
+        dutchCoachLine || 'Super gedaan! We gaan weer lekker verder.',
+        'border-emerald-400',
+      );
+    } else if (dutchCoachLine) {
+      this.app.hud.showToast('🗣️ NEDERLANDSE TUTOR', dutchCoachLine, 'border-emerald-400');
     }
 
     const chord = Math.max(
@@ -211,24 +257,54 @@ export class HitProcessor {
     );
     const id = Math.log2(chord / (2 * rt.r) + 1);
     this.recordPointingSuccess(now, id, x, y, rt);
-    this.finishTrial();
+    this.app.persistence.saveToBrowser(this.app);
+
+    // Spawn next trial silently so speechSynthesis never cuts off the celebratory joke or Dutch praise!
+    if (!this.app.flow.advanceEnvelopeTutor()) {
+      this.app.spawner.spawnForCurrentLevel(true);
+    }
+    this.app.flow.syncStageUI();
+
+    if (dutchCoachLine) {
+      const hitWord = rt.text.replace('-', '');
+      const nextTarget = this.app.activeReadingItem?.target ?? null;
+      this.app.voiceEngine.speakDutchTutor(`${hitWord}! ${dutchCoachLine}`, nextTarget);
+    }
   }
 
-  /** A wrong bubble resets the fade streak so the top goal re-illuminates to scaffold the learner. */
-  private bumpDistractor(rt: ReadingTarget): void {
+  /** A wrong bubble resets the fade streak, docks the visor at Goal Center, and scaffolds calmly in Dutch. */
+  private bumpDistractor(
+    rt: ReadingTarget,
+    stageChanged: 'PROMOTED' | 'STEPPED_BACK' | 'RETURNED_UP' | 'STEADY',
+    dutchCoachLine: string | null,
+  ): void {
     const gm = this.app.goalMemory;
     this.app.voiceEngine.speakDistractorBump(rt.text);
-    gm.autoStreak = 0;
-    gm.stageUnfadedStreak = 0;
-    gm.calmFadeUnlocked = false;
     gm.revealAlpha = 1.0;
+    this.app.layout.resetScoopVisorPosition();
+
+    if (stageChanged === 'STEPPED_BACK') {
+      this.app.spawner.spawnForCurrentLevel(true);
+      this.app.flow.syncStageUI();
+      this.app.persistence.saveToBrowser(this.app);
+      const msg =
+        dutchCoachLine ||
+        `Even een stapje terug naar stap ${this.app.reading.stage} om lekker op te warmen!`;
+      this.app.hud.showToast(
+        `💛 EVEN EEN STAPJE TERUG (STAP ${this.app.reading.stage}/6)`,
+        msg,
+        'border-amber-400',
+      );
+      this.app.voiceEngine.speakDutchTutor(msg, this.app.activeReadingItem?.target);
+      return;
+    }
+
     this.app.flow.configureGoalMemoryParameters();
     this.app.flow.syncStageUI();
-    this.app.hud.showToast(
-      `🛡️ TRY AGAIN: Look for "${this.app.activeReadingItem ? this.app.activeReadingItem.target : ''}"`,
-      'Top goal re-illuminated steadily to help!',
-      'border-amber-400',
-    );
+    const targetTxt = this.app.activeReadingItem ? this.app.activeReadingItem.target : '';
+    const msg = dutchCoachLine || `Bijna! Kijk rustig bovenaan naar "${targetTxt}".`;
+    this.app.hud.showToast(`🛡️ NOG EEN KEER: Zoek "${targetTxt}"`, msg, 'border-amber-400');
+    this.app.voiceEngine.speakDutchTutor(msg);
   }
 
   private countCorrectTrial(): void {
@@ -341,11 +417,19 @@ export class HitProcessor {
     }
   }
 
-  /** Tracks non-click hover or Scoop-Visor checkbacks into the top goal sensor bar. */
-  updateTopGoalHoverSensor(_x: number, y: number, now: number): void {
+  /** Tracks non-click hover or Scoop-Visor checkbacks into the top goal banner or faded Goal Center box. */
+  updateTopGoalHoverSensor(x: number, y: number, now: number): void {
     const { topSafeY } = this.app.layout.getSafeArenaCenter();
     const gm = this.app.goalMemory;
-    const inTopZone = y <= topSafeY + 26;
+    const goalCard = this.app.arenaRenderer.lastGoalCenterRect;
+    const inGoalCardAfterFade =
+      gm.revealAlpha < 0.9 &&
+      goalCard !== null &&
+      x >= goalCard.x - 8 &&
+      x <= goalCard.x + goalCard.w + 8 &&
+      y >= goalCard.y - 8 &&
+      y <= goalCard.y + goalCard.h + 8;
+    const inTopZone = y <= topSafeY - 2 || inGoalCardAfterFade;
 
     if (inTopZone) {
       if (!gm.isHoveringTopGoal) {

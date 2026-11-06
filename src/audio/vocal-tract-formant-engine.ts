@@ -186,6 +186,40 @@ export class VocalTractFormantEngine {
     }
   }
 
+  /**
+   * Speaks a warm Dutch Embedded-Tutor coaching sentence (optionally followed seamlessly by
+   * `"Zoek nu: <target>"` in the same utterance so `speechSynthesis.cancel()` never cuts off
+   * encouragement when the next trial spawns!).
+   */
+  speakDutchTutor(coachLine: string, nextPromptTarget?: string | null): void {
+    if (!this.enabled) return;
+    this.ensureContext();
+    this.utteranceCount++;
+
+    const cleanNext = nextPromptTarget ? nextPromptTarget.replace('-', '').trim() : '';
+    const fullLine = cleanNext ? `${coachLine} Zoek nu: ${cleanNext}.` : coachLine;
+    this.lastPhoneticSubtitle = `🗣️ ${fullLine}`;
+
+    // Gentle warm two-note formant chime before the Dutch voice speaks
+    this.synthesizeJokeTone({
+      startDelay: 0,
+      dur: 0.11,
+      fStart: 440,
+      fEnd: 523,
+      type: 'triangle',
+      gainLevel: 0.25,
+    });
+    this.synthesizeJokeTone({
+      startDelay: 0.11,
+      dur: 0.14,
+      fStart: 523,
+      fEnd: 659,
+      type: 'triangle',
+      gainLevel: 0.24,
+    });
+    this.speakClearHumanText(fullLine, 1.08, 0.95);
+  }
+
   ensureContext(): void {
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;

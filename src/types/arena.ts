@@ -96,6 +96,11 @@ export interface ScoopVisorState {
   enabled: boolean;
   isDragging: boolean;
   pointerId: number | null;
+  /** Pointer-to-handle delta latched at grab start so dragging never snaps or jumps. */
+  grabOffsetX: number;
+  grabOffsetY: number;
+  /** Decaying 0..1 highlight ring triggered when a stray tap lands away from the docked Scoop Pad. */
+  nudgePulse: number;
   offsetY: number;
   handleX: number;
   handleY: number;

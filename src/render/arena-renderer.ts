@@ -9,6 +9,8 @@ const MONO = 'ui-monospace, monospace';
 /** Draws the main arena canvas: grid, goal banner, targets, spiral, reading items, morphs, ribbon and trail. */
 export class ArenaRenderer {
   private readonly app: LabApp;
+  lastBannerRect: Rect | null = null;
+  lastGoalCenterRect: Rect | null = null;
 
   constructor(app: LabApp) {
     this.app = app;
@@ -19,11 +21,14 @@ export class ArenaRenderer {
     const arena = this.app.layout.getSafeArenaCenter();
     ctx.clearRect(0, 0, arena.w, arena.h);
 
+    this.lastGoalCenterRect = null;
     this.drawGrid(ctx, arena);
     this.drawSafeFrame(ctx, arena);
     const elapsedTrial = this.updateGoalReveal(now);
     const banner = this.drawGoalBanner(ctx, arena, elapsedTrial);
+    this.lastBannerRect = banner;
     this.drawAudioPrompt(ctx, arena, banner);
+    this.drawSpatialGoalDock(ctx, arena);
     this.drawPointingTarget(ctx, now);
     this.drawSpiralTunnel(ctx);
     this.drawReadingArena(ctx, arena);
@@ -31,6 +36,9 @@ export class ArenaRenderer {
     this.drawGestureRibbon(ctx);
     this.drawTrail(ctx, now);
     this.drawVisor(ctx);
+    if (this.app.guiEngine.xrayEnabled) {
+      this.drawCanvasXrayTags(ctx);
+    }
   }
 
   /** 1. Subtle coordinate grid. */
@@ -89,14 +97,14 @@ export class ArenaRenderer {
   private goalBannerText(): string {
     const { level, l1Mode, activeReadingItem } = this.app;
     if (level === 1 && l1Mode === 'shrink') {
-      return '🎯 GOAL: Drag Scoop-Visor & Lift to Drop on Shrinking Circle!';
+      return '🎯 DOEL: Sleep vanaf bovenaan naar de cirkel & laat los!';
     }
-    if (level === 2) return '🎯 GOAL: Drag Scoop-Visor to Target & Lift Finger to Drop!';
-    if (level === 3) return "🎯 GOAL: Steer Through the Spiral Tunnel to the Top 12 o'clock GOAL!";
+    if (level === 2) return '🎯 DOEL: Sleep vanaf het doel-vak bovenaan naar het doelwit!';
+    if (level === 3) return '🎯 DOEL: Stuur door de spiraal-tunnel naar BOVENAAN!';
     if (level === 7 && activeReadingItem) {
-      return `🎯 FIND & DROP ON: "${activeReadingItem.target}"  —  ${activeReadingItem.cue}`;
+      return `🎯 ZOEK & SLEEP NAAR: "${activeReadingItem.target}" — ${activeReadingItem.cue}`;
     }
-    return '🎯 GOAL: Tap the Green Pulse Circle!';
+    return '🎯 DOEL: Tik zodra de cirkel GROEN wordt!';
   }
 
   /** 4. Always-anchored top goal / memory sensor strip. Returns its rectangle. */
@@ -108,8 +116,9 @@ export class ArenaRenderer {
     const gm = this.app.goalMemory;
     const bannerW = Math.min(safeW, isMobile ? safeW - 4 : 620);
     const bannerX = cx - bannerW / 2;
-    const bannerY = 8;
-    const bannerH = topGoalBannerH - 6;
+    const bannerY = 6;
+    const bannerH = topGoalBannerH - 4;
+    const maxTxtW = Math.max(80, bannerW - 16);
 
     ctx.save();
     ctx.fillStyle = gm.isHoveringTopGoal
@@ -130,19 +139,20 @@ export class ArenaRenderer {
     if (gm.revealAlpha > 0.18) {
       ctx.globalAlpha = gm.revealAlpha;
       ctx.fillStyle = '#f8fafc';
-      ctx.font = `bold ${isMobile ? 12 : 14}px ${MONO}`;
+      ctx.font = `bold ${isMobile ? 11.5 : 13.5}px ${MONO}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(this.goalBannerText(), cx, bannerY + bannerH / 2);
+      ctx.fillText(this.goalBannerText(), cx, bannerY + bannerH / 2, maxTxtW);
     } else {
       ctx.fillStyle = '#67e8f9';
       ctx.font = `bold ${isMobile ? 11 : 12}px ${MONO}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(
-        '👁️ HOVER / STEER SCOOP HERE (NO CLICK) TO RE-PEEK GOAL',
+        '👁️ BEWEEG OMHOOG (ZONDER KLIK) OM HET DOEL WEER TE ZIEN',
         cx,
         bannerY + bannerH / 2,
+        maxTxtW,
       );
     }
 
@@ -157,6 +167,33 @@ export class ArenaRenderer {
     ctx.restore();
 
     return { x: bannerX, y: bannerY, w: bannerW, h: bannerH };
+  }
+
+  /** 4C. Compact Top Goal Center launch dock on L1B & L2 spatial pointing levels. */
+  private drawSpatialGoalDock(ctx: CanvasRenderingContext2D, arena: SafeArena): void {
+    const isSpatial =
+      (this.app.level === 1 && this.app.l1Mode === 'shrink') || this.app.level === 2;
+    if (!isSpatial || !this.app.scoopVisor.enabled) return;
+    const dock = this.app.layout.getGoalCenterDock(arena);
+    const cr = dock.cardRect;
+    this.lastGoalCenterRect = cr;
+    const gm = this.app.goalMemory;
+
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.32, gm.revealAlpha);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1.6;
+    drawRoundRect(ctx, cr.x, cr.y, cr.w, cr.h, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#bae6fd';
+    ctx.font = `bold 11px ${MONO}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🎯 START DOEL', dock.x, dock.y, cr.w - 12);
+    ctx.restore();
   }
 
   /** 4B. Floating in-arena audio opt-in pill, shown only while audio is off so the voices are never missed. */
@@ -310,40 +347,55 @@ export class ArenaRenderer {
     ctx.fillText('GOAL', e.x, e.y);
   }
 
-  /** 7. Level 7 reading arena: the giant focal prompt card at the top and the target bubbles below. */
-  private drawReadingArena(
-    ctx: CanvasRenderingContext2D,
-    { cx, isMobile, safeTop, safeW }: SafeArena,
-  ): void {
+  /** 7. Level 7 reading arena: the Top Goal Center Launch Box and the non-overlapping target bubbles. */
+  private drawReadingArena(ctx: CanvasRenderingContext2D, arena: SafeArena): void {
     const item = this.app.activeReadingItem;
     if (this.app.level !== 7 || !item) return;
+    const { cx, isMobile, safeH } = arena;
     const gm = this.app.goalMemory;
     const fontScale = this.app.reading.uiFontScale;
+    const dock = this.app.layout.getGoalCenterDock(arena);
+    const { x: cardX, y: cardY, w: cardW, h: cardH } = dock.cardRect;
+    this.lastGoalCenterRect = dock.cardRect;
 
-    const cardW = Math.min(safeW - 16, Math.round((isMobile ? 210 : 260) * fontScale));
-    const cardH = Math.round((isMobile ? 64 : 78) * fontScale);
-    const cardX = cx - cardW / 2;
-    const cardY = safeTop + (this.app.audioPromptRect ? 28 : 4);
+    // Subtle persistent anchor frame when faded so the Goal Center dock is always recognizable
+    if (gm.revealAlpha <= 0.12) {
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.42)';
+      ctx.lineWidth = 1.5;
+      drawRoundRect(ctx, cardX, cardY, cardW, cardH, 12);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(103, 232, 249, 0.68)';
+      ctx.font = `bold 10px ${MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('👁️ DOEL (SPIEK HIER)', cx, cardY + cardH / 2, cardW - 12);
+      ctx.restore();
+    }
 
     if (gm.revealAlpha > 0.05) {
       ctx.save();
       ctx.globalAlpha = gm.revealAlpha;
       ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
       ctx.strokeStyle = '#10b981';
-      ctx.lineWidth = 2.5;
-      drawRoundRect(ctx, cardX, cardY, cardW, cardH, 14);
+      ctx.lineWidth = 2.4;
+      drawRoundRect(ctx, cardX, cardY, cardW, cardH, 12);
       ctx.fill();
       ctx.stroke();
 
+      const promptFontPx = Math.round(
+        (safeH < 270 ? 22 : isMobile ? 28 : 38) * Math.min(1.25, fontScale),
+      );
       ctx.fillStyle = '#ecfdf5';
-      ctx.font = `800 ${Math.round((isMobile ? 34 : 44) * fontScale)}px ${MONO}`;
+      ctx.font = `800 ${promptFontPx}px ${MONO}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(item.target, cx, cardY + cardH * 0.44);
+      ctx.fillText(item.target, cx, cardY + cardH * 0.43, cardW - 14);
 
       ctx.fillStyle = '#94a3b8';
-      ctx.font = `${Math.round(11 * fontScale)}px ${MONO}`;
-      ctx.fillText(item.cue, cx, cardY + cardH * 0.84);
+      ctx.font = `${Math.max(10, Math.round((safeH < 270 ? 9.5 : 11) * Math.min(1.2, fontScale)))}px ${MONO}`;
+      ctx.fillText(item.cue, cx, cardY + cardH * 0.83, cardW - 14);
       ctx.restore();
     }
 
@@ -360,10 +412,10 @@ export class ArenaRenderer {
       ctx.stroke();
 
       ctx.fillStyle = '#f8fafc';
-      ctx.font = `bold ${Math.round(18 * fontScale)}px ${MONO}`;
+      ctx.font = `bold ${Math.round((safeH < 270 ? 15 : 18) * fontScale)}px ${MONO}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(rt.text, rt.x, rt.y);
+      ctx.fillText(rt.text, rt.x, rt.y, rt.r * 1.85);
       ctx.restore();
     }
   }
@@ -429,6 +481,55 @@ export class ArenaRenderer {
   private drawVisor(ctx: CanvasRenderingContext2D): void {
     if (this.app.scoopVisor.enabled && !(this.app.level === 1 && this.app.l1Mode === 'zero')) {
       this.app.visorRenderer.renderScoopVisorRig(ctx);
+    }
+  }
+
+  /** 12. Visual X-Ray `GUI_ID` tags for Canvas sub-elements when X-Ray mode is toggled on. */
+  private drawCanvasXrayTags(ctx: CanvasRenderingContext2D): void {
+    const tag = (label: string, x: number, y: number) => {
+      ctx.save();
+      ctx.font = `bold 9px ${MONO}`;
+      const w = ctx.measureText(label).width + 8;
+      ctx.fillStyle = 'rgba(88, 28, 135, 0.92)';
+      ctx.strokeStyle = '#e879f9';
+      ctx.lineWidth = 1;
+      drawRoundRect(ctx, x - w / 2, y - 8, w, 15, 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#fae8ff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, x, y);
+      ctx.restore();
+    };
+
+    if (this.lastBannerRect) {
+      tag(
+        'CANVAS_TOP_GOAL_BANNER',
+        this.lastBannerRect.x + this.lastBannerRect.w / 2,
+        this.lastBannerRect.y + 8,
+      );
+    }
+    if (this.lastGoalCenterRect) {
+      tag(
+        'CANVAS_GOAL_CENTER_BOX',
+        this.lastGoalCenterRect.x + this.lastGoalCenterRect.w / 2,
+        this.lastGoalCenterRect.y - 6,
+      );
+    }
+    const sv = this.app.scoopVisor;
+    if (sv.enabled && !(this.app.level === 1 && this.app.l1Mode === 'zero')) {
+      tag('CANVAS_SCOOP_VISOR', sv.visorX, sv.visorY - sv.visorR - 10);
+      tag('CANVAS_SCOOP_THUMB_PAD', sv.handleX, sv.handleY + sv.handleR + 10);
+    }
+    if (this.app.level === 7) {
+      for (const rt of this.app.readingTargets) {
+        tag(
+          rt.isTarget ? 'CANVAS_TARGET_BUBBLE' : 'CANVAS_DISTRACTOR_BUBBLE',
+          rt.x,
+          rt.y - rt.r - 9,
+        );
+      }
     }
   }
 }

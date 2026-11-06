@@ -6,6 +6,7 @@ import { bindLabDeck } from './lab-deck';
 import { bindDrawer } from './drawer';
 import { bindSessionControls } from './session-controls';
 import { bindArenaPointer } from './arena-pointer';
+import { bindHumanTutorAndGuiFeedback } from './human-tutor';
 
 /** Registers every DOM/window listener of the lab (order matches the original registration order). */
 export function bindEvents(app: LabApp): void {
@@ -15,5 +16,6 @@ export function bindEvents(app: LabApp): void {
   bindLabDeck(app);
   bindDrawer(app);
   bindSessionControls(app);
+  bindHumanTutorAndGuiFeedback(app);
   bindArenaPointer(app);
 }

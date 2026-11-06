@@ -5,6 +5,7 @@ import type { ForeperiodRecord, TillmannTrialRecord, TrialInput } from '../types
 
 /** Learner progress shared by every saved session and committed checkpoint. */
 export interface ProgressSnapshot {
+  learnerNickname?: string;
   currentStepIdx: number;
   phaseProgress: number;
   groundingComplete: boolean;
@@ -51,6 +52,7 @@ export interface PreviousSessionSummary {
  * malformed values are treated as absent.
  */
 export interface RestoredSession {
+  learnerNickname?: string;
   sessionNumber?: number;
   lastSavedUnixMs?: number;
   lastSavedIso?: string;
@@ -170,6 +172,7 @@ export function parseSession(value: unknown): RestoredSession | null {
   if (!isRecord(value)) return null;
   const mode = value.goalMemoryMode;
   return {
+    learnerNickname: text(value.learnerNickname),
     sessionNumber: finiteNumber(value.sessionNumber),
     lastSavedUnixMs: finiteNumber(value.lastSavedUnixMs),
     lastSavedIso: text(value.lastSavedIso),

@@ -174,28 +174,28 @@ export class AdaptiveReadingEngine {
         items: [
           {
             target: 'bos',
-            cue: 'bos (forest)',
+            cue: 'bos (bomen)',
             morph: 'FOREST',
             morphLabel: '🌲 bos!',
             distractors: ['dos', 'los', 'vos', 'sok'],
           },
           {
             target: 'kat',
-            cue: 'kat (cat)',
+            cue: 'kat (poes)',
             morph: 'CAT',
             morphLabel: '🐱 kat!',
             distractors: ['rat', 'mat', 'tak', 'kas'],
           },
           {
             target: 'zon',
-            cue: 'zon (sun)',
+            cue: 'zon (warm)',
             morph: 'SUN',
             morphLabel: '☀️ zon!',
             distractors: ['ton', 'oom', 'nos', 'zin'],
           },
           {
             target: 'vis',
-            cue: 'vis (fish)',
+            cue: 'vis (zwemt)',
             morph: 'FISH',
             morphLabel: '🐟 vis!',
             distractors: ['mis', 'sis', 'vos', 'pit'],
@@ -209,21 +209,21 @@ export class AdaptiveReadingEngine {
         items: [
           {
             target: 'ko-nijn',
-            cue: 'konijn (rabbit)',
+            cue: 'konijn (hup-hup)',
             morph: 'RABBIT',
             morphLabel: '🐰 konijn!',
             distractors: ['ko-ning', 'ka-non', 'ro-zijn', 'to-ren'],
           },
           {
             target: 'boom-hut',
-            cue: 'boomhut (treehouse)',
+            cue: 'boomhut (in de boom)',
             morph: 'TREEHOUSE',
             morphLabel: '🌳 boomhut!',
             distractors: ['boot-tocht', 'bos-pad', 'bier-dop', 'woon-boot'],
           },
           {
             target: 'vlieg-tuig',
-            cue: 'vliegtuig (plane)',
+            cue: 'vliegtuig (in de lucht)',
             morph: 'PLANE',
             morphLabel: '✈️ vliegtuig!',
             distractors: ['voet-bal', 'vuur-werk', 'zeil-boot', 'speel-goed'],

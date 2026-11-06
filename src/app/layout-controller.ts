@@ -1,6 +1,12 @@
-import type { DrawerState, ReadingTarget, SafeArena } from '../types/arena';
+import type { DrawerState, ReadingTarget, Rect, SafeArena } from '../types/arena';
 import { byId, get2d, maybeById } from '../util/dom';
 import type { LabApp } from './lab-app';
+
+export interface GoalCenterDock {
+  readonly x: number;
+  readonly y: number;
+  readonly cardRect: Rect;
+}
 
 /** Narrows a plain number (from a data attribute or arithmetic) to a valid drawer position. */
 export function toDrawerState(n: number): DrawerState {
@@ -130,9 +136,9 @@ export class LayoutController {
     const visibleBottomY = Math.min(vh, arenaRect.bottom, drawerRect.top);
     const h = Math.max(150, visibleBottomY - Math.max(0, arenaRect.top));
 
-    const isMobile = vw < 640;
-    const pad = isMobile ? 12 : 20;
-    const topGoalBannerH = isMobile ? 38 : 44;
+    const isMobile = vw < 640 || vh < 500;
+    const pad = isMobile ? 10 : 20;
+    const topGoalBannerH = isMobile ? 36 : 44;
 
     const safeLeft = pad;
     const safeTop = pad + topGoalBannerH;
@@ -157,7 +163,7 @@ export class LayoutController {
       safeH,
       diag,
       cx: Math.round(safeLeft + safeW / 2),
-      cy: Math.round(safeTop + safeH * 0.42),
+      cy: Math.round(safeTop + safeH * 0.46),
       topSafeY: safeTop,
     };
     this.safeCache = arena;
@@ -165,18 +171,81 @@ export class LayoutController {
   }
 
   /**
+   * Computes the Top Goal Center Launch Box near `safeTop` (the fading prompt card from which
+   * the Scoop-Visor starts each trial so the learner drags smoothly outward without jumping).
+   */
+  getGoalCenterDock(arena = this.getSafeArenaCenter()): GoalCenterDock {
+    const { cx, safeTop, safeW, safeH, isMobile } = arena;
+    const audioOffset = this.app.voiceEngine.enabled ? 0 : 28;
+    const compactVertical = safeH < 300;
+    const scale = compactVertical
+      ? Math.min(1.0, this.app.reading.uiFontScale)
+      : this.app.reading.uiFontScale;
+
+    if (this.app.level === 7) {
+      const baseH = safeH < 260 ? 44 : isMobile ? 56 : 68;
+      const cardH = Math.round(baseH * scale);
+      const cardW = Math.min(safeW - 16, Math.round((isMobile ? 196 : 244) * scale));
+      const cardX = Math.round(cx - cardW / 2);
+      const cardY = Math.round(safeTop + 4 + audioOffset);
+      return {
+        x: cx,
+        y: Math.round(cardY + cardH * 0.52),
+        cardRect: { x: cardX, y: cardY, w: cardW, h: cardH },
+      };
+    }
+
+    // Compact Goal Launch Dock near top for L1B / L2 spatial trials
+    const cardW = Math.min(safeW - 20, isMobile ? 156 : 184);
+    const cardH = compactVertical ? 32 : 38;
+    const cardX = Math.round(cx - cardW / 2);
+    const cardY = Math.round(safeTop + 4 + audioOffset);
+    return {
+      x: cx,
+      y: Math.round(cardY + cardH * 0.5),
+      cardRect: { x: cardX, y: cardY, w: cardW, h: cardH },
+    };
+  }
+
+  /** True if a candidate circle `(x, y, r)` overlaps the Top Goal Center card or docked Scoop-Visor. */
+  overlapsGoalDock(x: number, y: number, r: number, arena = this.getSafeArenaCenter()): boolean {
+    const dock = this.getGoalCenterDock(arena);
+    const cr = dock.cardRect;
+    const pad = r + 10;
+    if (x >= cr.x - pad && x <= cr.x + cr.w + pad && y >= cr.y - pad && y <= cr.y + cr.h + pad) {
+      return true;
+    }
+    if (this.app.scoopVisor.enabled && !(this.app.level === 1 && this.app.l1Mode === 'zero')) {
+      const sv = this.app.scoopVisor;
+      const dockHandleY = dock.y + sv.offsetY;
+      if (Math.hypot(x - dock.x, y - dockHandleY) < r + sv.handleR + 10) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Per-frame hard boundary clamp: guarantees NO target, spiral point, or reading bubble
-   * can EVER exist outside the visible screen on any phone, tablet, or split-window.
+   * can EVER exist outside the visible screen or overlap the Goal Center on any phone or split-window.
    */
   enforceOnScreenGuard() {
-    const { cx, cy, safeLeft, safeTop, safeRight, safeBottom, safeW, safeH, isMobile } =
-      this.getSafeArenaCenter();
-    const maxR = Math.max(14, Math.min(safeW, safeH) * 0.24);
+    const arena = this.getSafeArenaCenter();
+    const { cx, cy, safeLeft, safeTop, safeRight, safeBottom, safeW, safeH, isMobile } = arena;
+    const maxR = Math.max(14, Math.min(safeW, safeH) * 0.22);
+    const compact = isMobile || safeH < 340;
 
     // Adapt FFP vertical offset so both the upper Visor and lower Thumb Handle stay 100% reachable
-    this.app.scoopVisor.offsetY = isMobile ? Math.min(82, Math.max(58, safeH * 0.18)) : 88;
-    this.app.scoopVisor.handleR = isMobile ? 28 : 26;
-    this.app.scoopVisor.visorR = isMobile ? 28 : 30;
+    this.app.scoopVisor.offsetY = compact
+      ? Math.round(Math.min(76, Math.max(46, safeH * 0.19)))
+      : 84;
+    this.app.scoopVisor.handleR = safeH < 280 ? 24 : isMobile ? 28 : 26;
+    this.app.scoopVisor.visorR = safeH < 280 ? 24 : isMobile ? 28 : 30;
+
+    // Decay gentle grab-nudge ring animation
+    if (this.app.scoopVisor.nudgePulse > 0) {
+      this.app.scoopVisor.nudgePulse = Math.max(0, this.app.scoopVisor.nudgePulse - 0.035);
+    }
 
     // Reserve bottom space for the lower thumb handle when Scoop-Visor is active on spatial targets
     const ffpBottomReserve =
@@ -184,13 +253,14 @@ export class LayoutController {
         ? this.app.scoopVisor.offsetY + this.app.scoopVisor.handleR + 6
         : 0;
     const effectiveTargetBottom = Math.max(safeTop + 70, safeBottom - ffpBottomReserve);
+    const dock = this.getGoalCenterDock(arena);
 
     if (this.app.target) {
       this.app.target.r = Math.max(14, Math.min(this.app.target.r, maxR));
       if (this.app.level === 1 && this.app.l1Mode === 'zero') {
         this.app.target.x = cx;
         this.app.target.y = cy;
-      } else {
+      } else if (this.app.level === 1 || this.app.level === 2) {
         const m = this.app.target.r + 6;
         this.app.target.x = Math.max(safeLeft + m, Math.min(safeRight - m, this.app.target.x));
         this.app.target.y = Math.max(
@@ -201,29 +271,44 @@ export class LayoutController {
     }
 
     if (this.app.level === 7 && this.app.readingTargets.length > 0) {
-      const promptReserveH = Math.min(
-        safeH * 0.3,
-        Math.round((isMobile ? 74 : 96) * this.app.reading.uiFontScale),
+      const cr = dock.cardRect;
+      const belowDockTop = cr.y + cr.h + 10;
+      const bubbleMaxR = Math.max(
+        16,
+        Math.min(safeW * 0.14, Math.max(22, (effectiveTargetBottom - safeTop) * 0.16)),
       );
-      const minTargetY = safeTop + promptReserveH;
-      const bubbleMaxR = Math.max(16, Math.min(safeW, effectiveTargetBottom - minTargetY) * 0.16);
       for (const rt of this.app.readingTargets) {
         rt.r = Math.max(16, Math.min(rt.r, bubbleMaxR));
         const m = rt.r + 6;
         rt.x = Math.max(safeLeft + m, Math.min(safeRight - m, rt.x));
-        rt.y = Math.max(minTargetY + m, Math.min(effectiveTargetBottom - m, rt.y));
+        rt.y = Math.max(safeTop + m, Math.min(effectiveTargetBottom - m, rt.y));
+
+        // Prevent overlap with the Top Goal Center card
+        const inCardX = rt.x >= cr.x - rt.r - 6 && rt.x <= cr.x + cr.w + rt.r + 6;
+        const inCardY = rt.y <= belowDockTop + rt.r;
+        if (inCardX && inCardY) {
+          if (effectiveTargetBottom - belowDockTop >= rt.r * 2 + 16) {
+            rt.y = Math.min(effectiveTargetBottom - m, Math.max(rt.y, belowDockTop + rt.r + 4));
+          } else {
+            // Landscape / short viewport: push cleanly to left or right wing outside Goal Center
+            rt.x =
+              rt.x < cx
+                ? Math.max(safeLeft + m, cr.x - rt.r - 10)
+                : Math.min(safeRight - m, cr.x + cr.w + rt.r + 10);
+          }
+        }
       }
     }
 
-    // Keep Scoop-Visor & Handle inside screen bounds when idle
+    // Keep Scoop-Visor & Handle inside screen bounds when idle (allowing top Goal Center dock!)
     if (!this.app.scoopVisor.isDragging) {
       this.app.scoopVisor.visorX = Math.max(
         safeLeft + 24,
         Math.min(safeRight - 24, this.app.scoopVisor.visorX),
       );
       this.app.scoopVisor.visorY = Math.max(
-        safeTop + 24,
-        Math.min(safeBottom - this.app.scoopVisor.offsetY - 20, this.app.scoopVisor.visorY),
+        18,
+        Math.min(safeBottom - this.app.scoopVisor.offsetY - 12, this.app.scoopVisor.visorY),
       );
       this.app.scoopVisor.handleX = this.app.scoopVisor.visorX;
       this.app.scoopVisor.handleY = this.app.scoopVisor.visorY + this.app.scoopVisor.offsetY;
@@ -235,7 +320,7 @@ export class LayoutController {
    * any active target, spiral, or reading bubbles are immediately clamped/rescaled into view.
    */
   clampActiveTargetsToSafeView() {
-    const { cx, cy, safeW, safeH } = this.getSafeArenaCenter();
+    const { cx, cy, safeW, safeH } = this.getSafeArenaCenter(true);
     this.enforceOnScreenGuard();
     if (this.app.level === 3) {
       this.app.spawner.buildSpiral(cx, cy, Math.min(safeW, safeH) * 0.4);
@@ -243,21 +328,31 @@ export class LayoutController {
   }
 
   /**
-   * Resets or parks the Scoop-Visor Rig at a convenient starting dock below the top goal
-   * (or at the user's current position) when a new trial spawns.
+   * Parks the Scoop-Visor Rig at the Top Goal Center Launch Box (or Spiral START on L3)
+   * when a new trial spawns so every drag begins smoothly from the Goal Center near the top!
    */
   resetScoopVisorPosition() {
-    const { cx, safeTop, safeBottom, safeH } = this.getSafeArenaCenter();
+    const arena = this.getSafeArenaCenter();
     if (!this.app.scoopVisor.isDragging) {
-      // Park the visor in the lower-middle launch dock so the user drags up/across to the targets at the top
-      const startVisorY = Math.min(
-        safeBottom - this.app.scoopVisor.offsetY - 28,
-        Math.round(safeTop + safeH * 0.56),
-      );
-      this.app.scoopVisor.visorX = cx;
-      this.app.scoopVisor.visorY = Math.max(safeTop + 40, startVisorY);
+      if (this.app.level === 3 && this.app.spiral.path.length > 0) {
+        const startPt = this.app.spiral.path[0];
+        this.app.scoopVisor.visorX = startPt.x;
+        this.app.scoopVisor.visorY = Math.min(
+          arena.safeBottom - this.app.scoopVisor.offsetY - 14,
+          startPt.y,
+        );
+      } else {
+        const dock = this.getGoalCenterDock(arena);
+        this.app.scoopVisor.visorX = dock.x;
+        this.app.scoopVisor.visorY = Math.min(
+          arena.safeBottom - this.app.scoopVisor.offsetY - 14,
+          dock.y,
+        );
+      }
       this.app.scoopVisor.handleX = this.app.scoopVisor.visorX;
       this.app.scoopVisor.handleY = this.app.scoopVisor.visorY + this.app.scoopVisor.offsetY;
+      this.app.scoopVisor.grabOffsetX = 0;
+      this.app.scoopVisor.grabOffsetY = 0;
     }
     this.app.scoopVisor.hoveredCandidate = null;
   }

@@ -42,15 +42,13 @@ export function bindSessionControls(app: LabApp): void {
   // Clear Storage / New Kid Profile
   onClick('btnClearStorage', () => {
     app.persistence.clearBrowserSave();
-    app.telemetry.trials = [];
-    app.fpEngine.records = [];
-    app.reading.stage = 1;
-    app.currentStepIdx = 0;
-    app.phaseProgress = 0;
-    app.flow.applyStepIndex(0, false);
+    app.resetFreshLearnerState();
+    app.persistence.saveToBrowser(app);
+    app.flow.syncStageUI();
+    app.spawner.spawnForCurrentLevel();
     app.hud.showToast(
-      '👶 NEW KID PROFILE STARTED',
-      'Cleared localStorage & reset to Phase 1/5.',
+      `👶 SCHOON PROFIEL: ${app.persistence.activeNickname}`,
+      'Geheugen gewist — rustige start zonder vervagen op Leesstap 1!',
       'border-rose-500',
     );
   });

@@ -1,5 +1,4 @@
 import { BUILD_INFO } from '../app/build-info';
-import DEFAULT_SESSION from '../data/default-session.json';
 import type { GoalMemoryState, L1Mode, Level, LevelStep } from '../types/arena';
 import { maybeById } from '../util/dom';
 import { TimeStampUtil } from '../util/timestamp';
@@ -35,12 +34,49 @@ export interface SessionHost {
   spawnForCurrentLevel(): void;
 }
 
+export interface LearnerProfileMeta {
+  readonly slug: string;
+  readonly nickname: string;
+}
+
+const PROFILES_KEY = 'TILLMANN_LEARNER_PROFILES_V3';
+const ACTIVE_SLUG_KEY = 'TILLMANN_ACTIVE_LEARNER_SLUG_V3';
+
+function slugifyNickname(name: string): string {
+  const clean = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return clean || 'beste_leerling';
+}
+
+const DEFAULT_PROFILES: readonly LearnerProfileMeta[] = [
+  { slug: 'beste_leerling', nickname: 'Beste leerling' },
+  { slug: 'opa_test', nickname: 'Opa (Test)' },
+];
+
+function isProfileList(val: unknown): val is LearnerProfileMeta[] {
+  return (
+    Array.isArray(val) &&
+    val.length > 0 &&
+    val.every(
+      (p) =>
+        typeof p === 'object' &&
+        p !== null &&
+        typeof (p as Record<string, unknown>).slug === 'string' &&
+        typeof (p as Record<string, unknown>).nickname === 'string',
+    )
+  );
+}
+
 /*************************************************************************
- * 8.5. LONGITUDINAL BROWSER PERSISTENCE & RETURN-PROGRESSION ANALYZER
+ * 8.5. LONGITUDINAL BROWSER PERSISTENCE & LEARNER NICKNAME PROFILES
  *************************************************************************/
 export class LongitudinalPersistenceEngine {
-  readonly storageKey: string;
-  readonly checkpointKey: string;
+  activeSlug: string;
+  activeNickname: string;
+  profiles: LearnerProfileMeta[];
   sessionNumber: number;
   previousSessionSummary: PreviousSessionSummary | null;
   returnGapMinutes: number;
@@ -50,14 +86,64 @@ export class LongitudinalPersistenceEngine {
   private readonly memoryFallbackStore: Map<string, string>;
 
   constructor() {
-    this.storageKey = 'TILLMANN_GAMES_LONGITUDINAL_V1';
-    this.checkpointKey = 'TILLMANN_GAMES_GIT_CHECKPOINT_V1_8';
+    this.memoryFallbackStore = new Map();
+    this.profiles = [...DEFAULT_PROFILES];
+    this.activeSlug = 'beste_leerling';
+    this.activeNickname = 'Beste leerling';
     this.sessionNumber = 1;
     this.previousSessionSummary = null;
     this.returnGapMinutes = 0;
-    this.progressionDeltaReport = 'Session #1 Baseline';
+    this.progressionDeltaReport = 'Sessie #1 Start';
     this.morphRewardDwellMs = 0;
-    this.memoryFallbackStore = new Map();
+    this.loadProfileRegistry();
+  }
+
+  get storageKey(): string {
+    return `TILLMANN_LEARNER_SAVE_V3_${this.activeSlug}`;
+  }
+
+  get checkpointKey(): string {
+    return `TILLMANN_LEARNER_CHECKPOINT_V3_${this.activeSlug}`;
+  }
+
+  private loadProfileRegistry(): void {
+    try {
+      const rawProfiles = this.safeGetItem(PROFILES_KEY);
+      if (rawProfiles) {
+        const parsed: unknown = JSON.parse(rawProfiles);
+        if (isProfileList(parsed)) {
+          this.profiles = parsed;
+        }
+      }
+      const savedSlug = this.safeGetItem(ACTIVE_SLUG_KEY);
+      const found = this.profiles.find((p) => p.slug === savedSlug) ?? this.profiles[0];
+      this.activeSlug = found.slug;
+      this.activeNickname = found.nickname;
+    } catch {
+      this.profiles = [...DEFAULT_PROFILES];
+      this.activeSlug = 'beste_leerling';
+      this.activeNickname = 'Beste leerling';
+    }
+  }
+
+  private saveProfileRegistry(): void {
+    this.safeSetItem(PROFILES_KEY, JSON.stringify(this.profiles));
+    this.safeSetItem(ACTIVE_SLUG_KEY, this.activeSlug);
+  }
+
+  /** Switches to an existing or newly entered learner nickname, isolating their calibration & reading stage. */
+  selectOrCreateLearner(nickname: string): LearnerProfileMeta {
+    const cleanName = nickname.trim().slice(0, 24) || 'Beste leerling';
+    const slug = slugifyNickname(cleanName);
+    let existing = this.profiles.find((p) => p.slug === slug);
+    if (!existing) {
+      existing = { slug, nickname: cleanName };
+      this.profiles.push(existing);
+    }
+    this.activeSlug = existing.slug;
+    this.activeNickname = existing.nickname;
+    this.saveProfileRegistry();
+    return existing;
   }
 
   safeGetItem(key: string): string | null {
@@ -79,9 +165,10 @@ export class LongitudinalPersistenceEngine {
 
   loadFromBrowser(host: SessionHost): boolean {
     try {
-      // 1. Check if this file was exported as a Standalone Portable HTML App with baked-in state
+      // Only restore an explicitly baked standalone export (`window.__BAKED_TILLMANN_STATE__`) or a real
+      // saved profile for THIS learner — never pollute a new learner with a pre-baked adult preset!
       let raw = this.safeGetItem(this.storageKey);
-      const bakedState: unknown = window.__BAKED_TILLMANN_STATE__ || DEFAULT_SESSION;
+      const bakedState: unknown = window.__BAKED_TILLMANN_STATE__;
       if (!raw && bakedState) {
         raw = JSON.stringify(bakedState);
         this.safeSetItem(this.storageKey, raw);
@@ -89,6 +176,10 @@ export class LongitudinalPersistenceEngine {
       if (!raw) return false;
       const saved = parseSession(JSON.parse(raw));
       if (!saved) return false;
+
+      if (saved.learnerNickname) {
+        this.activeNickname = saved.learnerNickname;
+      }
 
       const nowUnix = TimeStampUtil.nowPacket().unixMs;
       const lastUnix = saved.lastSavedUnixMs || nowUnix;
@@ -98,9 +189,9 @@ export class LongitudinalPersistenceEngine {
       this.previousSessionSummary = {
         lastSavedIso: saved.lastSavedIso || new Date(lastUnix).toISOString(),
         readingStage: saved.readingStage || 1,
-        rt0BaselineMs: saved.rt0BaselineMs || 443,
-        effectiveWidthRatio: saved.effectiveWidthRatio || 0.31,
-        zpdScore: saved.zpdScore || 72,
+        rt0BaselineMs: saved.rt0BaselineMs || 780,
+        effectiveWidthRatio: saved.effectiveWidthRatio || 0.48,
+        zpdScore: saved.zpdScore || 75,
         trialCount: saved.storedTrialCount,
       };
 
@@ -127,17 +218,16 @@ export class LongitudinalPersistenceEngine {
         host.semanticMorphEnabled = saved.semanticMorphEnabled;
       }
 
-      if (saved.trials.length > 0) {
-        host.telemetry.trials = [];
-        for (const trial of saved.trials) host.telemetry.addTrial({ ...trial });
-      }
-      if (saved.fpRecords.length > 0) {
-        host.fpEngine.records = saved.fpRecords;
-      }
+      host.telemetry.trials = [];
+      for (const trial of saved.trials) host.telemetry.addTrial({ ...trial });
+      host.fpEngine.records = saved.fpRecords;
 
       const trialCount = host.telemetry.trials.length;
-      this.progressionDeltaReport = `Session #${this.sessionNumber} (+${this.returnGapMinutes.toFixed(1)}m gap) • Stage ${host.reading.stage}/6`;
-      this.showStatus(`💾 Restored S#${this.sessionNumber} (${trialCount}tr)`, trialCount);
+      this.progressionDeltaReport = `${this.activeNickname} • Sessie #${this.sessionNumber} (+${this.returnGapMinutes.toFixed(1)}m) • Stap ${host.reading.stage}/6`;
+      this.showStatus(
+        `💾 ${this.activeNickname} (S#${this.sessionNumber} • ${trialCount}tr)`,
+        trialCount,
+      );
       return true;
     } catch {
       return false;
@@ -166,7 +256,10 @@ export class LongitudinalPersistenceEngine {
         );
       }
       const trialCount = host.telemetry.trials.length;
-      this.showStatus(`💾 Saved (S#${this.sessionNumber} • ${trialCount}tr)`, trialCount);
+      this.showStatus(
+        `💾 ${this.activeNickname} (S#${this.sessionNumber} • ${trialCount}tr)`,
+        trialCount,
+      );
       return payload;
     } catch {
       return null;
@@ -211,7 +304,7 @@ export class LongitudinalPersistenceEngine {
   }
 
   clearBrowserSave(): void {
-    this.memoryFallbackStore.clear();
+    this.memoryFallbackStore.delete(this.storageKey);
     try {
       localStorage.removeItem(this.storageKey);
     } catch {
@@ -219,11 +312,12 @@ export class LongitudinalPersistenceEngine {
     }
     this.sessionNumber = 1;
     this.previousSessionSummary = null;
-    this.progressionDeltaReport = 'Fresh Profile (Cleared)';
+    this.progressionDeltaReport = `${this.activeNickname} • Vers profiel`;
   }
 
   private snapshotProgress(host: SessionHost): ProgressSnapshot {
     return {
+      learnerNickname: this.activeNickname,
       currentStepIdx: host.currentStepIdx,
       phaseProgress: host.phaseProgress,
       groundingComplete: host.groundingComplete,
@@ -241,14 +335,16 @@ export class LongitudinalPersistenceEngine {
     };
   }
 
-  /** Mirrors the save state into the status pill and, when `trialCount` is given, the top "saved JSON" button. */
+  /** Mirrors the save state into the status pill, learner badge and top "saved JSON" button. */
   private showStatus(pillText: string, trialCount?: number): void {
     const pill = maybeById('pillSaveStatus');
     if (pill) pill.textContent = pillText;
+    const learnerLbl = maybeById('learnerNameLabel');
+    if (learnerLbl) learnerLbl.textContent = this.activeNickname;
     if (trialCount === undefined) return;
     const topBtn = maybeById('btnTopSavedJson');
     if (topBtn) {
-      topBtn.textContent = `💾 SAVED S#${this.sessionNumber} (${trialCount}tr) • 📋 COPY JSON`;
+      topBtn.textContent = `💾 ${this.activeNickname} (${trialCount}tr) • 📋 JSON`;
     }
   }
 }

@@ -32,11 +32,29 @@ export class PayloadExporter {
         adaptedScale: Number(g.scale.toFixed(2)),
       });
     }
+    const tutorStatus = this.app.tutor.getStatusSnapshot(
+      this.app.goalMemory.mode,
+      this.app.telemetry.rt0BaselineMs,
+      this.app.telemetry.trials.length,
+    );
     return {
       gitCheckpointMeta: BUILD_INFO,
       unixTimestampMs: ts.unixMs,
       perfNowMicroseconds: ts.perfNowUs,
       timestampISO: ts.iso,
+      learnerProfile: {
+        activeSlug: this.app.persistence.activeSlug,
+        activeNickname: this.app.persistence.activeNickname,
+        profiles: this.app.persistence.profiles,
+      },
+      embeddedTutor: {
+        status: tutorStatus,
+        recentTickers: this.app.tutor.tickers,
+      },
+      humanTutorFeedback: {
+        accumulatedCount: this.app.feedback.entries.length,
+        entries: this.app.feedback.entries,
+      },
       longitudinalPersistence: {
         sessionNumber: this.app.persistence.sessionNumber,
         returnGapMinutes: Number(this.app.persistence.returnGapMinutes.toFixed(2)),
