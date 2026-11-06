@@ -1,47 +1,85 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
+import type { DrawerState, ReadingTarget, SafeArena } from '../types/arena';
+import { byId, get2d, maybeById } from '../util/dom';
 import type { LabApp } from './lab-app';
+
+/** Narrows a plain number (from a data attribute or arithmetic) to a valid drawer position. */
+export function toDrawerState(n: number): DrawerState {
+  return n <= 0 ? 0 : n >= 2 ? 2 : 1;
+}
 
 /** Canvas sizing, drawer layout, the on-screen safe action field and scoop-visor placement. */
 export class LayoutController {
   private readonly app: LabApp;
+  /** Cached for 250ms so the 60Hz loop never makes Android re-run layout. */
+  private safeCache: SafeArena | null = null;
+  private lastSafeCacheMs = 0;
+  private resizeTimer: number | undefined;
+  private resizeObserver: ResizeObserver | undefined;
+  private readonly bufferSizes = new WeakMap<HTMLCanvasElement, { w: number; h: number }>();
 
   constructor(app: LabApp) {
     this.app = app;
+  }
+
+  /** Drops the cached safe-area geometry so the next read re-measures the DOM. */
+  invalidateSafeCache() {
+    this.safeCache = null;
+  }
+
+  /** Debounced ResizeObserver with a dimension-delta guard so Android Chrome never enters a resize loop. */
+  observeResize(container: HTMLElement) {
+    if (!window.ResizeObserver) return;
+    let lastObsW = 0;
+    let lastObsH = 0;
+    this.resizeObserver = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect;
+      if (cr) {
+        if (Math.abs(cr.width - lastObsW) < 3 && Math.abs(cr.height - lastObsH) < 3) {
+          return;
+        }
+        lastObsW = cr.width;
+        lastObsH = cr.height;
+      }
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = setTimeout(() => {
+        this.safeCache = null;
+        this.setupCanvases();
+        this.app.guiEngine.scanDOMElements();
+        this.clampActiveTargetsToSafeView();
+      }, 80);
+    });
+    this.resizeObserver.observe(container);
   }
 
   setupCanvases() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const ow = Math.floor(window.innerWidth * dpr);
     const oh = Math.floor(window.innerHeight * dpr);
-    if (
-      Math.abs((this.app.overlayCanvas._lastW || 0) - ow) >= 2 ||
-      Math.abs((this.app.overlayCanvas._lastH || 0) - oh) >= 2
-    ) {
-      this.app.overlayCanvas._lastW = ow;
-      this.app.overlayCanvas._lastH = oh;
-      this.app.overlayCanvas.width = ow;
-      this.app.overlayCanvas.height = oh;
+    const overlay = this.app.overlayCanvas;
+    const overlayLast = this.bufferSizes.get(overlay) ?? { w: 0, h: 0 };
+    if (Math.abs(overlayLast.w - ow) >= 2 || Math.abs(overlayLast.h - oh) >= 2) {
+      this.bufferSizes.set(overlay, { w: ow, h: oh });
+      overlay.width = ow;
+      overlay.height = oh;
       this.app.overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
-    const fit = (c) => {
-      if (!c || !c.parentElement) return;
+    const fit = (c: HTMLCanvasElement) => {
+      if (!c.parentElement) return;
       const r = c.parentElement.getBoundingClientRect();
       const w = Math.max(240, r.width);
       const h = Math.max(100, r.height);
       const targetW = Math.floor(w * dpr);
       const targetH = Math.floor(h * dpr);
       // Guard: only mutate canvas buffer when dimensions actually change by >= 2px (prevents Android ResizeObserver loop!)
-      if (Math.abs((c._lastW || 0) - targetW) < 2 && Math.abs((c._lastH || 0) - targetH) < 2) {
+      const last = this.bufferSizes.get(c) ?? { w: 0, h: 0 };
+      if (Math.abs(last.w - targetW) < 2 && Math.abs(last.h - targetH) < 2) {
         return;
       }
-      c._lastW = targetW;
-      c._lastH = targetH;
+      this.bufferSizes.set(c, { w: targetW, h: targetH });
       c.width = targetW;
       c.height = targetH;
-      const ctx = c.getContext('2d');
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      get2d(c).setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     fit(this.app.canvas);
     if (this.app.drawerState >= 1) {
@@ -49,19 +87,19 @@ export class LayoutController {
       fit(this.app.s2Canvas);
       fit(this.app.s3Canvas);
     }
-    this.app._cachedSafeCenter = null;
+    this.safeCache = null;
   }
 
-  setDrawerState(state) {
+  setDrawerState(state: DrawerState) {
     this.app.drawerState = state;
-    const drawer = document.getElementById('telemetryDrawer');
+    const drawer = byId('telemetryDrawer');
     drawer.dataset.state = String(state);
-    document.querySelectorAll('.dstate-btn').forEach((b) => {
-      const active = parseInt(b.dataset.dstate, 10) === state;
+    document.querySelectorAll<HTMLElement>('.dstate-btn').forEach((b) => {
+      const active = parseInt(b.dataset.dstate ?? '', 10) === state;
       b.className = active ? 'dstate-btn ergo-sub-btn active' : 'dstate-btn ergo-sub-btn';
     });
     setTimeout(() => {
-      this.app._cachedSafeCenter = null;
+      this.safeCache = null;
       this.setupCanvases();
       this.app.guiEngine.scanDOMElements();
       this.clampActiveTargetsToSafeView();
@@ -73,15 +111,15 @@ export class LayoutController {
    * automatically subtracting the current height of #telemetryDrawer and a 24px border frame.
    * Cached for 250ms so calling it inside the 60Hz loop never thrashes Android layout.
    */
-  getSafeArenaCenter(forceRefresh = false) {
+  getSafeArenaCenter(forceRefresh = false): SafeArena {
     const now = performance.now();
-    if (!forceRefresh && this.app._cachedSafeCenter && now - this.app._lastSafeCacheMs < 250) {
-      return this.app._cachedSafeCenter;
+    if (!forceRefresh && this.safeCache && now - this.lastSafeCacheMs < 250) {
+      return this.safeCache;
     }
-    this.app._lastSafeCacheMs = now;
+    this.lastSafeCacheMs = now;
 
     const arenaRect = this.app.canvas.getBoundingClientRect();
-    const drawer = document.getElementById('telemetryDrawer');
+    const drawer = maybeById('telemetryDrawer');
     const drawerRect = drawer ? drawer.getBoundingClientRect() : { top: window.innerHeight };
 
     const vw = Math.max(260, window.innerWidth || document.documentElement.clientWidth || 360);
@@ -106,7 +144,7 @@ export class LayoutController {
 
     this.app.telemetry.viewDiagPx = Math.round(diag);
 
-    this.app._cachedSafeCenter = {
+    const arena: SafeArena = {
       w,
       h,
       isMobile,
@@ -122,7 +160,8 @@ export class LayoutController {
       cy: Math.round(safeTop + safeH * 0.42),
       topSafeY: safeTop,
     };
-    return this.app._cachedSafeCenter;
+    this.safeCache = arena;
+    return arena;
   }
 
   /**
@@ -237,7 +276,7 @@ export class LayoutController {
         sv.hoveredCandidate = { type: 'MAIN_TARGET', obj: this.app.target, dist: d };
       }
     } else if (this.app.level === 7 && this.app.readingTargets.length > 0) {
-      let best = null;
+      let best: ReadingTarget | null = null;
       let bestDist = Infinity;
       for (const rt of this.app.readingTargets) {
         const d = Math.hypot(sv.visorX - rt.x, sv.visorY - rt.y);

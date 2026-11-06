@@ -1,6 +1,14 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
 import type { LabApp } from '../app/lab-app';
+import type { ForeperiodDistribution } from '../types/telemetry';
+import { byId } from '../util/dom';
+
+const DIST_COLOR: Partial<Record<ForeperiodDistribution, string>> = {
+  ISOCHRONOUS: '#38bdf8',
+  EXPONENTIAL: '#10b981',
+  UNIFORM: '#f59e0b',
+  BIMODAL: '#a855f7',
+  WEIBULL: '#ec4899',
+};
 
 /** Draws the three lab scope canvases (Fitts law, foreperiod hazard and the scope-3 modes). */
 export class ScopeRenderer {
@@ -10,7 +18,7 @@ export class ScopeRenderer {
     this.app = app;
   }
 
-  renderScope1() {
+  renderScope1(): void {
     const ctx = this.app.s1Ctx;
     const w = this.app.s1Canvas.clientWidth || 240;
     const h = this.app.s1Canvas.clientHeight || 120;
@@ -37,7 +45,7 @@ export class ScopeRenderer {
     ctx.stroke();
   }
 
-  renderScope2() {
+  renderScope2(): void {
     const ctx = this.app.s2Ctx;
     const w = this.app.s2Canvas.clientWidth || 240;
     const h = this.app.s2Canvas.clientHeight || 120;
@@ -54,15 +62,15 @@ export class ScopeRenderer {
     }
   }
 
-  renderScope3() {
+  renderScope3(): void {
     if (this.app.scope3Mode === 'BULLSEYE_MAP') {
-      document.getElementById('scope3Title').textContent = '3. Bullseye Center Bias & We Map';
+      byId('scope3Title').textContent = '3. Bullseye Center Bias & We Map';
       this.renderScope3BullseyeMap();
     } else if (this.app.scope3Mode === 'PUT_HAZARD') {
-      document.getElementById('scope3Title').textContent = '3. PUT Wait tw vs RT & Hazard';
+      byId('scope3Title').textContent = '3. PUT Wait tw vs RT & Hazard';
       this.renderScope3PutHazard();
     } else {
-      document.getElementById('scope3Title').textContent = '3. Nominal vs Effective ID_eff Fitts';
+      byId('scope3Title').textContent = '3. Nominal vs Effective ID_eff Fitts';
       this.renderScope3Fitts();
     }
   }
@@ -71,7 +79,7 @@ export class ScopeRenderer {
    * Renders the Normalized Target Bullseye Hit Map (Left) + Radial Hit Density Histogram (Right)
    * proving how the user shoots for the center (We << W_nominal) vs. rim grazing.
    */
-  renderScope3BullseyeMap() {
+  renderScope3BullseyeMap(): void {
     const ctx = this.app.s3Ctx;
     const w = this.app.s3Canvas.clientWidth || 240;
     const h = this.app.s3Canvas.clientHeight || 120;
@@ -151,7 +159,7 @@ export class ScopeRenderer {
     }
   }
 
-  renderScope3PutHazard() {
+  renderScope3PutHazard(): void {
     const ctx = this.app.s3Ctx;
     const w = this.app.s3Canvas.clientWidth || 240;
     const h = this.app.s3Canvas.clientHeight || 120;
@@ -187,8 +195,9 @@ export class ScopeRenderer {
     const meanY = stats.mu + stats.tau;
     const yAt500 = meanY - stats.slopeMsPerSec * 0.5;
     const yAt2800 = meanY + stats.slopeMsPerSec * 1.8;
-    const mapY = (rt) => h - 8 - Math.min(1, Math.max(0, (rt - 140) / 1450)) * (h - 20);
-    const mapX = (tw) => ((Math.min(3200, Math.max(350, tw)) - 350) / 2850) * (plotW - 12) + 6;
+    const mapY = (rt: number) => h - 8 - Math.min(1, Math.max(0, (rt - 140) / 1450)) * (h - 20);
+    const mapX = (tw: number) =>
+      ((Math.min(3200, Math.max(350, tw)) - 350) / 2850) * (plotW - 12) + 6;
 
     ctx.strokeStyle = 'rgba(16, 185, 129, 0.65)';
     ctx.lineWidth = 1.5;
@@ -196,14 +205,6 @@ export class ScopeRenderer {
     ctx.moveTo(mapX(500), mapY(yAt500));
     ctx.lineTo(mapX(2800), mapY(yAt2800));
     ctx.stroke();
-
-    const distColor = {
-      ISOCHRONOUS: '#38bdf8',
-      EXPONENTIAL: '#10b981',
-      UNIFORM: '#f59e0b',
-      BIMODAL: '#a855f7',
-      WEIBULL: '#ec4899',
-    };
 
     for (const r of this.app.fpEngine.records) {
       const x = mapX(r.tw);
@@ -218,7 +219,7 @@ export class ScopeRenderer {
         ctx.lineTo(x - 3.5, y + 3.5);
         ctx.stroke();
       } else {
-        ctx.fillStyle = distColor[r.dist] || '#10b981';
+        ctx.fillStyle = DIST_COLOR[r.dist] || '#10b981';
         ctx.beginPath();
         ctx.arc(x, y, 3, 0, Math.PI * 2);
         ctx.fill();
@@ -244,7 +245,7 @@ export class ScopeRenderer {
     ctx.stroke();
   }
 
-  renderScope3Fitts() {
+  renderScope3Fitts(): void {
     const ctx = this.app.s3Ctx;
     const w = this.app.s3Canvas.clientWidth || 240;
     const h = this.app.s3Canvas.clientHeight || 120;
@@ -257,8 +258,8 @@ export class ScopeRenderer {
     ctx.fillStyle = 'rgba(88, 28, 135, 0.22)';
     ctx.fillRect(0, 0, w, bandH);
 
-    const mapX = (id) => Math.min(w - 8, Math.max(8, (id / maxID) * (w - 16) + 8));
-    const mapY = (mt) => {
+    const mapX = (id: number) => Math.min(w - 8, Math.max(8, (id / maxID) * (w - 16) + 8));
+    const mapY = (mt: number) => {
       if (mt <= linearMaxY) {
         return h - 6 - (mt / linearMaxY) * (h - bandH - 10);
       }

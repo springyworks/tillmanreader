@@ -1,6 +1,5 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
 import type { LabApp } from '../../app/lab-app';
+import { closestFrom } from '../../util/dom';
 
 /** Window-level resize and pointer tracking (GUI-id Shannon DI, eye-proxy gaze, doodling). */
 export function bindGlobalPointerTracking(app: LabApp): void {
@@ -25,7 +24,7 @@ export function bindGlobalPointerTracking(app: LabApp): void {
 
   // Track clicks on any [data-gui-id] element
   window.addEventListener('pointerdown', (e) => {
-    const guiEl = e.target.closest('[data-gui-id]');
+    const guiEl = closestFrom<HTMLElement>(e.target, '[data-gui-id]');
     if (guiEl) {
       app.guiEngine.recordGuiClick(guiEl.dataset.guiId);
     }

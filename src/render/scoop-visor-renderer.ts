@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
 import type { LabApp } from '../app/lab-app';
 
 /** Draws the Anti-Fat-Finger offset scoop-visor drag-and-drop rig. */
@@ -13,7 +11,7 @@ export class ScoopVisorRenderer {
   /**
    * Renders the Anti-Fat-Finger (FFP) Offset Scoop-Visor Drag-and-Drop Rig
    */
-  renderScoopVisorRig(ctx, now) {
+  renderScoopVisorRig(ctx: CanvasRenderingContext2D): void {
     const sv = this.app.scoopVisor;
     const vr = sv.visorR;
     const locked = Boolean(sv.hoveredCandidate);

@@ -1,17 +1,74 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
+import type { DrawerState } from '../types/arena';
+import type { MetricCategory, SignatureMetric, TillmannTrialRecord } from '../types/telemetry';
+import type { AdaptiveReadingEngine } from './adaptive-reading-engine';
+import type { ForeperiodHazardEngine } from './foreperiod-hazard-engine';
+import type { GestureDecoder } from './gesture-decoder';
+import type { GuiAffordanceDoodleEngine } from './gui-affordance-doodle-engine';
+import type { TelemetryEngine } from './telemetry-engine';
+
+/** The 100-metric grid shows either every category or just one. */
+export type MetricFilter = MetricCategory | 'ALL';
+
+const METRIC_FILTERS: Record<MetricFilter, true> = {
+  ALL: true,
+  A: true,
+  B: true,
+  C: true,
+  D: true,
+  E: true,
+  F: true,
+};
+
+/** Narrows a DOM string (such as a `data-cat` attribute) to a metric filter. */
+export function isMetricFilter(value: string | undefined): value is MetricFilter {
+  return value !== undefined && Object.hasOwn(METRIC_FILTERS, value);
+}
+
+/** Everything the 100 metrics are derived from. */
+export interface SignatureSources {
+  telemetry: TelemetryEngine;
+  gesture: GestureDecoder;
+  reading: AdaptiveReadingEngine;
+  fpEngine: ForeperiodHazardEngine;
+  guiEngine: GuiAffordanceDoodleEngine;
+  drawerState: DrawerState;
+  /** Sounds voiced so far (M094). */
+  voiceUtterances: number;
+  /** Cumulative gaze dwell near celebratory morphs, in ms (M097). */
+  morphRewardDwellMs: number;
+}
+
+type MetricSeed = Omit<SignatureMetric, 'value' | 'raw'>;
+
+type TrialSummary = Pick<
+  TillmannTrialRecord,
+  'id' | 'mt' | 'hw' | 'brain' | 'ballistic' | 'homing'
+>;
+
+/** Stands in until the first trial has been recorded. */
+const DEFAULT_TRIAL: TrialSummary = {
+  id: 2.94,
+  mt: 1400,
+  hw: 14,
+  brain: 460,
+  ballistic: 420,
+  homing: 506,
+};
 
 /*************************************************************************
  * 8. THE 100-METRIC DETERMINISTIC MATHEMATICAL SIGNATURE ENGINE
  *************************************************************************/
 export class Signature100Engine {
+  activeCategory: MetricFilter;
+  readonly metrics: SignatureMetric[];
+
   constructor() {
     this.activeCategory = 'ALL';
     this.metrics = this.buildSchema();
   }
 
-  buildSchema() {
-    const schema = [
+  buildSchema(): SignatureMetric[] {
+    const schema: MetricSeed[] = [
       // CATEGORY A: OSI Layer 1 Hardware & OS Event Pipeline (1-16)
       { id: 1, cat: 'A', name: 'Mean Poll Δt', unit: 'ms' },
       { id: 2, cat: 'A', name: 'Median Poll Rate', unit: 'Hz' },
@@ -127,34 +184,20 @@ export class Signature100Engine {
     return schema.map((m) => ({ ...m, value: 0, raw: 0 }));
   }
 
-  computeAll(tel, gest, read, drawerState, fpEngine, guiEngine) {
+  computeAll(src: SignatureSources): void {
+    const { telemetry: tel, gesture: gest, reading: read, fpEngine, guiEngine, drawerState } = src;
     const dts = tel.dtHistory.length > 0 ? tel.dtHistory : [11.1, 11.2, 10.9];
     const meanDt = dts.reduce((a, b) => a + b, 0) / dts.length;
     const minDt = Math.min(...dts);
     const maxDt = Math.max(...dts);
-    const lastTrial = tel.trials[tel.trials.length - 1] || {
-      id: 2.94,
-      mt: 1400,
-      hw: 14,
-      brain: 460,
-      ballistic: 420,
-      homing: 506,
-    };
-    const fpStats = fpEngine
-      ? fpEngine.computeStats()
-      : {
-          mu: 111,
-          sigma: 235,
-          tau: 552,
-          corrTwRT: -0.19,
-          slopeMsPerSec: -182,
-          waitEntropyBits: 2.38,
-        };
+    const lastTrial: TrialSummary = tel.trials.at(-1) ?? DEFAULT_TRIAL;
+    const fpStats = fpEngine.computeStats();
 
-    const set = (id, val) => {
+    const set = (id: number, val: number): void => {
       const safe = Number.isFinite(val) ? val : 0;
-      this.metrics[id - 1].raw = safe;
-      this.metrics[id - 1].value = Math.abs(safe) >= 100 ? Math.round(safe) : safe.toFixed(2);
+      const metric = this.metrics[id - 1];
+      metric.raw = safe;
+      metric.value = Math.abs(safe) >= 100 ? Math.round(safe) : safe.toFixed(2);
     };
 
     // Category A
@@ -236,34 +279,29 @@ export class Signature100Engine {
     set(64, fpStats.tau);
     set(65, fpStats.corrTwRT);
     set(66, fpStats.slopeMsPerSec);
-    set(67, fpEngine ? fpEngine.entrainmentLockScore : 63);
+    set(67, fpEngine.entrainmentLockScore);
     set(68, tel.meanNormRadiusPct * 100);
     set(69, tel.effectiveWidthRatio);
     set(70, tel.selfImposedTaxBits);
 
     // Category E
-    const nearGui =
-      guiEngine && guiEngine.nearestGui
-        ? guiEngine.nearestGui
-        : { liveID: 1.5, struggleRatio: 1.0 };
+    const nearGui = guiEngine.nearestGui ?? { liveID: 1.5, struggleRatio: 1.0 };
     let totalGuiGazeSec = 0;
-    if (guiEngine) {
-      for (const g of guiEngine.registry.values()) totalGuiGazeSec += g.dwellMs / 1000;
-    }
+    for (const g of guiEngine.registry.values()) totalGuiGazeSec += g.dwellMs / 1000;
     set(71, nearGui.liveID);
     set(72, nearGui.struggleRatio);
     set(73, gest.counts.no);
     set(74, gest.counts.yes);
-    set(75, guiEngine ? guiEngine.orbitCount : 0);
-    set(76, guiEngine ? guiEngine.scratchCount : 0);
-    set(77, guiEngine ? guiEngine.underlineCount : 0);
+    set(75, guiEngine.orbitCount);
+    set(76, guiEngine.scratchCount);
+    set(77, guiEngine.underlineCount);
     set(78, drawerState);
     set(79, read.uiFontScale * 100);
     set(80, totalGuiGazeSec);
-    set(81, guiEngine ? guiEngine.hesitationCount : 0);
+    set(81, guiEngine.hesitationCount);
     set(82, tel.lastSlipPx * 1.3);
     set(83, Math.max(1, Math.round((lastTrial.homing || 500) / 280)));
-    set(84, Math.min(1, gest.counts.no * 0.25 + (guiEngine ? guiEngine.scratchCount * 0.35 : 0)));
+    set(84, Math.min(1, gest.counts.no * 0.25 + guiEngine.scratchCount * 0.35));
     set(85, Math.max(0.2, Math.min(1, tel.regMotor.tp / 6.0)));
     set(86, 100);
 
@@ -272,19 +310,13 @@ export class Signature100Engine {
     set(88, read.mirrorConfusionRate);
     set(89, read.lastDistractorPullPx);
     set(90, read.lastDecodeLatencyMs * 0.35);
-    set(91, tel.goalPeekCount || 0);
-    set(92, tel.totalGoalHoverMs || 0);
-    set(93, (tel.memoryDecayAlpha !== undefined ? tel.memoryDecayAlpha : 1) * 100);
-    set(
-      94,
-      window.labApp && window.labApp.voiceEngine ? window.labApp.voiceEngine.utteranceCount : 0,
-    );
+    set(91, tel.goalPeekCount);
+    set(92, tel.totalGoalHoverMs);
+    set(93, tel.memoryDecayAlpha * 100);
+    set(94, src.voiceUtterances);
     set(95, read.readingAccuracy);
     set(96, read.lastDecodeLatencyMs / Math.max(0.5, read.readingAccuracy / 100));
-    set(
-      97,
-      window.labApp && window.labApp.persistence ? window.labApp.persistence.morphRewardDwellMs : 0,
-    );
+    set(97, src.morphRewardDwellMs);
     set(98, read.zpdScore);
     set(99, read.stage);
     set(100, read.uiFontScale);

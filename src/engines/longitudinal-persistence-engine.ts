@@ -1,13 +1,54 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
 import { BUILD_INFO } from '../app/build-info';
-import { TimeStampUtil } from '../util/timestamp';
 import DEFAULT_SESSION from '../data/default-session.json';
+import type { GoalMemoryState, L1Mode, Level, LevelStep } from '../types/arena';
+import { maybeById } from '../util/dom';
+import { TimeStampUtil } from '../util/timestamp';
+import type { AdaptiveReadingEngine } from './adaptive-reading-engine';
+import type { ForeperiodHazardEngine } from './foreperiod-hazard-engine';
+import {
+  checkpointTag,
+  parseSession,
+  type CommittedCheckpoint,
+  type PreviousSessionSummary,
+  type ProgressSnapshot,
+  type SavedSession,
+} from './session-snapshot';
+import type { TelemetryEngine } from './telemetry-engine';
+
+/** The slice of the running lab that a session snapshot is read from and restored into. */
+export interface SessionHost {
+  currentStepIdx: number;
+  phaseProgress: number;
+  groundingComplete: boolean;
+  semanticMorphEnabled: boolean;
+  level: Level;
+  l1Mode: L1Mode;
+  readonly levelSteps: readonly LevelStep[];
+  readonly goalMemory: Pick<GoalMemoryState, 'mode' | 'stageUnfadedStreak' | 'calmFadeUnlocked'>;
+  readonly reading: Pick<AdaptiveReadingEngine, 'stage' | 'uiFontScale' | 'zpdScore'>;
+  readonly telemetry: Pick<
+    TelemetryEngine,
+    'rt0BaselineMs' | 'effectiveWidthRatio' | 'trials' | 'addTrial'
+  >;
+  readonly fpEngine: Pick<ForeperiodHazardEngine, 'records'>;
+  syncStageUI(): void;
+  spawnForCurrentLevel(): void;
+}
 
 /*************************************************************************
  * 8.5. LONGITUDINAL BROWSER PERSISTENCE & RETURN-PROGRESSION ANALYZER
  *************************************************************************/
 export class LongitudinalPersistenceEngine {
+  readonly storageKey: string;
+  readonly checkpointKey: string;
+  sessionNumber: number;
+  previousSessionSummary: PreviousSessionSummary | null;
+  returnGapMinutes: number;
+  progressionDeltaReport: string;
+  morphRewardDwellMs: number;
+  /** Keeps saves working when localStorage is blocked, e.g. in private browsing. */
+  private readonly memoryFallbackStore: Map<string, string>;
+
   constructor() {
     this.storageKey = 'TILLMANN_GAMES_LONGITUDINAL_V1';
     this.checkpointKey = 'TILLMANN_GAMES_GIT_CHECKPOINT_V1_8';
@@ -16,37 +57,38 @@ export class LongitudinalPersistenceEngine {
     this.returnGapMinutes = 0;
     this.progressionDeltaReport = 'Session #1 Baseline';
     this.morphRewardDwellMs = 0;
-    this.morphDistractionDeltaMs = 0;
-    this.memoryFallbackStore = {};
+    this.memoryFallbackStore = new Map();
   }
 
-  safeGetItem(key) {
+  safeGetItem(key: string): string | null {
     try {
-      return localStorage.getItem(key) || this.memoryFallbackStore[key] || null;
-    } catch (_) {
-      return this.memoryFallbackStore[key] || null;
+      return localStorage.getItem(key) || this.memoryFallbackStore.get(key) || null;
+    } catch {
+      return this.memoryFallbackStore.get(key) || null;
     }
   }
 
-  safeSetItem(key, val) {
-    this.memoryFallbackStore[key] = val;
+  safeSetItem(key: string, val: string): void {
+    this.memoryFallbackStore.set(key, val);
     try {
       localStorage.setItem(key, val);
-    } catch (_) {}
+    } catch {
+      // The in-memory copy above still serves reads.
+    }
   }
 
-  loadFromBrowser(app) {
+  loadFromBrowser(host: SessionHost): boolean {
     try {
       // 1. Check if this file was exported as a Standalone Portable HTML App with baked-in state
       let raw = this.safeGetItem(this.storageKey);
-      const bakedState = window.__BAKED_TILLMANN_STATE__ || DEFAULT_SESSION;
+      const bakedState: unknown = window.__BAKED_TILLMANN_STATE__ || DEFAULT_SESSION;
       if (!raw && bakedState) {
         raw = JSON.stringify(bakedState);
         this.safeSetItem(this.storageKey, raw);
       }
       if (!raw) return false;
-      const saved = JSON.parse(raw);
-      if (!saved || typeof saved !== 'object') return false;
+      const saved = parseSession(JSON.parse(raw));
+      if (!saved) return false;
 
       const nowUnix = TimeStampUtil.nowPacket().unixMs;
       const lastUnix = saved.lastSavedUnixMs || nowUnix;
@@ -59,72 +101,57 @@ export class LongitudinalPersistenceEngine {
         rt0BaselineMs: saved.rt0BaselineMs || 443,
         effectiveWidthRatio: saved.effectiveWidthRatio || 0.31,
         zpdScore: saved.zpdScore || 72,
-        trialCount: Array.isArray(saved.trials) ? saved.trials.length : 0,
+        trialCount: saved.storedTrialCount,
       };
 
-      if (Number.isFinite(saved.currentStepIdx)) app.currentStepIdx = saved.currentStepIdx;
-      if (Number.isFinite(saved.phaseProgress)) app.phaseProgress = saved.phaseProgress;
-      if (typeof saved.groundingComplete === 'boolean')
-        app.groundingComplete = saved.groundingComplete;
-      if (Number.isFinite(saved.readingStage))
-        app.reading.stage = Math.max(1, Math.min(6, saved.readingStage));
-      if (Number.isFinite(saved.uiFontScale)) app.reading.uiFontScale = saved.uiFontScale;
-      if (Number.isFinite(saved.zpdScore)) app.reading.zpdScore = saved.zpdScore;
-      if (Number.isFinite(saved.rt0BaselineMs)) app.telemetry.rt0BaselineMs = saved.rt0BaselineMs;
-      if (Number.isFinite(saved.effectiveWidthRatio))
-        app.telemetry.effectiveWidthRatio = saved.effectiveWidthRatio;
-      if (Number.isFinite(saved.stageUnfadedStreak))
-        app.goalMemory.stageUnfadedStreak = saved.stageUnfadedStreak;
-      if (typeof saved.calmFadeUnlocked === 'boolean')
-        app.goalMemory.calmFadeUnlocked = saved.calmFadeUnlocked;
-      if (saved.goalMemoryMode) app.goalMemory.mode = saved.goalMemoryMode;
-      if (typeof saved.semanticMorphEnabled === 'boolean')
-        app.semanticMorphEnabled = saved.semanticMorphEnabled;
-
-      if (Array.isArray(saved.trials) && saved.trials.length > 0) {
-        app.telemetry.trials = [];
-        for (const t of saved.trials) app.telemetry.addTrial({ ...t });
+      if (saved.currentStepIdx !== undefined) host.currentStepIdx = saved.currentStepIdx;
+      if (saved.phaseProgress !== undefined) host.phaseProgress = saved.phaseProgress;
+      if (saved.groundingComplete !== undefined) host.groundingComplete = saved.groundingComplete;
+      if (saved.readingStage !== undefined) {
+        host.reading.stage = Math.max(1, Math.min(6, saved.readingStage));
       }
-      if (Array.isArray(saved.fpRecords) && saved.fpRecords.length > 0) {
-        app.fpEngine.records = saved.fpRecords;
+      if (saved.uiFontScale !== undefined) host.reading.uiFontScale = saved.uiFontScale;
+      if (saved.zpdScore !== undefined) host.reading.zpdScore = saved.zpdScore;
+      if (saved.rt0BaselineMs !== undefined) host.telemetry.rt0BaselineMs = saved.rt0BaselineMs;
+      if (saved.effectiveWidthRatio !== undefined) {
+        host.telemetry.effectiveWidthRatio = saved.effectiveWidthRatio;
+      }
+      if (saved.stageUnfadedStreak !== undefined) {
+        host.goalMemory.stageUnfadedStreak = saved.stageUnfadedStreak;
+      }
+      if (saved.calmFadeUnlocked !== undefined) {
+        host.goalMemory.calmFadeUnlocked = saved.calmFadeUnlocked;
+      }
+      if (saved.goalMemoryMode !== undefined) host.goalMemory.mode = saved.goalMemoryMode;
+      if (saved.semanticMorphEnabled !== undefined) {
+        host.semanticMorphEnabled = saved.semanticMorphEnabled;
       }
 
-      this.progressionDeltaReport = `Session #${this.sessionNumber} (+${this.returnGapMinutes.toFixed(1)}m gap) • Stage ${app.reading.stage}/6`;
-      const pill = document.getElementById('pillSaveStatus');
-      if (pill) {
-        pill.textContent = `💾 Restored S#${this.sessionNumber} (${app.telemetry.trials.length}tr)`;
+      if (saved.trials.length > 0) {
+        host.telemetry.trials = [];
+        for (const trial of saved.trials) host.telemetry.addTrial({ ...trial });
       }
-      const topBtn = document.getElementById('btnTopSavedJson');
-      if (topBtn) {
-        topBtn.textContent = `💾 SAVED S#${this.sessionNumber} (${app.telemetry.trials.length}tr) • 📋 COPY JSON`;
+      if (saved.fpRecords.length > 0) {
+        host.fpEngine.records = saved.fpRecords;
       }
+
+      const trialCount = host.telemetry.trials.length;
+      this.progressionDeltaReport = `Session #${this.sessionNumber} (+${this.returnGapMinutes.toFixed(1)}m gap) • Stage ${host.reading.stage}/6`;
+      this.showStatus(`💾 Restored S#${this.sessionNumber} (${trialCount}tr)`, trialCount);
       return true;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
 
-  saveToBrowser(app) {
+  saveToBrowser(host: SessionHost): SavedSession | null {
     try {
       const ts = TimeStampUtil.nowPacket();
-      const payload = {
+      const payload: SavedSession = {
         sessionNumber: this.sessionNumber,
         lastSavedUnixMs: ts.unixMs,
         lastSavedIso: ts.iso,
-        currentStepIdx: app.currentStepIdx,
-        phaseProgress: app.phaseProgress,
-        groundingComplete: app.groundingComplete,
-        readingStage: app.reading.stage,
-        uiFontScale: app.reading.uiFontScale,
-        zpdScore: app.reading.zpdScore,
-        rt0BaselineMs: Math.round(app.telemetry.rt0BaselineMs),
-        effectiveWidthRatio: Number(app.telemetry.effectiveWidthRatio.toFixed(3)),
-        stageUnfadedStreak: app.goalMemory.stageUnfadedStreak,
-        calmFadeUnlocked: app.goalMemory.calmFadeUnlocked,
-        goalMemoryMode: app.goalMemory.mode,
-        semanticMorphEnabled: app.semanticMorphEnabled,
-        trials: app.telemetry.trials.slice(-65),
-        fpRecords: app.fpEngine.records.slice(-50),
+        ...this.snapshotProgress(host),
       };
       this.safeSetItem(this.storageKey, JSON.stringify(payload));
       if (!this.safeGetItem(this.checkpointKey)) {
@@ -138,79 +165,90 @@ export class LongitudinalPersistenceEngine {
           }),
         );
       }
-      const pill = document.getElementById('pillSaveStatus');
-      if (pill) {
-        pill.textContent = `💾 Saved (S#${this.sessionNumber} • ${app.telemetry.trials.length}tr)`;
-      }
-      const topBtn = document.getElementById('btnTopSavedJson');
-      if (topBtn) {
-        topBtn.textContent = `💾 SAVED S#${this.sessionNumber} (${app.telemetry.trials.length}tr) • 📋 COPY JSON`;
-      }
+      const trialCount = host.telemetry.trials.length;
+      this.showStatus(`💾 Saved (S#${this.sessionNumber} • ${trialCount}tr)`, trialCount);
       return payload;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
 
-  commitCheckpoint(app) {
+  commitCheckpoint(host: SessionHost): CommittedCheckpoint | null {
     try {
       const ts = TimeStampUtil.nowPacket();
-      const snap = {
+      const snap: CommittedCheckpoint = {
         gitMeta: BUILD_INFO,
         committedUnixMs: ts.unixMs,
         committedIso: ts.iso,
-        currentStepIdx: app.currentStepIdx,
-        phaseProgress: app.phaseProgress,
-        groundingComplete: app.groundingComplete,
-        readingStage: app.reading.stage,
-        uiFontScale: app.reading.uiFontScale,
-        zpdScore: app.reading.zpdScore,
-        rt0BaselineMs: Math.round(app.telemetry.rt0BaselineMs),
-        effectiveWidthRatio: Number(app.telemetry.effectiveWidthRatio.toFixed(3)),
-        stageUnfadedStreak: app.goalMemory.stageUnfadedStreak,
-        calmFadeUnlocked: app.goalMemory.calmFadeUnlocked,
-        goalMemoryMode: app.goalMemory.mode,
-        semanticMorphEnabled: app.semanticMorphEnabled,
-        trials: app.telemetry.trials.slice(-65),
-        fpRecords: app.fpEngine.records.slice(-50),
+        ...this.snapshotProgress(host),
       };
       this.safeSetItem(this.checkpointKey, JSON.stringify(snap));
       this.safeSetItem(this.storageKey, JSON.stringify(snap));
-      const pill = document.getElementById('pillSaveStatus');
-      if (pill) {
-        pill.textContent = `📌 Committed ${BUILD_INFO.commitHash}`;
-      }
+      this.showStatus(`📌 Committed ${BUILD_INFO.commitHash}`);
       return snap;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
 
-  revertToCheckpoint(app) {
+  /** Restores the last committed checkpoint; returns its release tag, or null when there is none. */
+  revertToCheckpoint(host: SessionHost): string | null {
     try {
       const raw = this.safeGetItem(this.checkpointKey);
       if (!raw) return null;
-      const snap = JSON.parse(raw);
+      const snap: unknown = JSON.parse(raw);
       this.safeSetItem(this.storageKey, JSON.stringify(snap));
-      this.loadFromBrowser(app);
-      const cfg = app.levelSteps[app.currentStepIdx] || app.levelSteps[0];
-      app.level = cfg.level;
-      app.l1Mode = cfg.l1Mode;
-      app.syncStageUI();
-      app.spawnForCurrentLevel();
-      return (snap.gitMeta && snap.gitMeta.tag) || BUILD_INFO.tag;
-    } catch (e) {
+      this.loadFromBrowser(host);
+      const cfg = host.levelSteps[host.currentStepIdx] || host.levelSteps[0];
+      host.level = cfg.level;
+      host.l1Mode = cfg.l1Mode;
+      host.syncStageUI();
+      host.spawnForCurrentLevel();
+      return checkpointTag(snap) ?? BUILD_INFO.tag;
+    } catch {
       return null;
     }
   }
 
-  clearBrowserSave() {
-    this.memoryFallbackStore = {};
+  clearBrowserSave(): void {
+    this.memoryFallbackStore.clear();
     try {
       localStorage.removeItem(this.storageKey);
-    } catch (e) {}
+    } catch {
+      // Nothing was persisted, so there is nothing to clear.
+    }
     this.sessionNumber = 1;
     this.previousSessionSummary = null;
     this.progressionDeltaReport = 'Fresh Profile (Cleared)';
+  }
+
+  private snapshotProgress(host: SessionHost): ProgressSnapshot {
+    return {
+      currentStepIdx: host.currentStepIdx,
+      phaseProgress: host.phaseProgress,
+      groundingComplete: host.groundingComplete,
+      readingStage: host.reading.stage,
+      uiFontScale: host.reading.uiFontScale,
+      zpdScore: host.reading.zpdScore,
+      rt0BaselineMs: Math.round(host.telemetry.rt0BaselineMs),
+      effectiveWidthRatio: Number(host.telemetry.effectiveWidthRatio.toFixed(3)),
+      stageUnfadedStreak: host.goalMemory.stageUnfadedStreak,
+      calmFadeUnlocked: host.goalMemory.calmFadeUnlocked,
+      goalMemoryMode: host.goalMemory.mode,
+      semanticMorphEnabled: host.semanticMorphEnabled,
+      trials: host.telemetry.trials.slice(-65),
+      fpRecords: host.fpEngine.records.slice(-50),
+    };
+  }
+
+  /** Mirrors the save state into the status pill and, when `trialCount` is given, the top "saved JSON" button. */
+  private showStatus(pillText: string, trialCount?: number): void {
+    const pill = maybeById('pillSaveStatus');
+    if (pill) pill.textContent = pillText;
+    if (trialCount === undefined) return;
+    const topBtn = maybeById('btnTopSavedJson');
+    if (topBtn) {
+      topBtn.textContent = `💾 SAVED S#${this.sessionNumber} (${trialCount}tr) • 📋 COPY JSON`;
+    }
   }
 }

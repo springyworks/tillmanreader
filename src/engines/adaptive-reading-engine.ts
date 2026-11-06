@@ -1,7 +1,53 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
+/** Vector illustration a correct answer morphs into; the keys the SemanticMorphEngine draws. */
+export type SemanticMorphKey =
+  | 'BALL'
+  | 'SUN'
+  | 'FOREST'
+  | 'HOUSE'
+  | 'CAT'
+  | 'BOOK'
+  | 'ICECREAM'
+  | 'FISH'
+  | 'RABBIT'
+  | 'TREEHOUSE'
+  | 'PLANE';
+
+/** One prompt of a reading stage: the grapheme or word to find among its distractors. */
+export interface ReadingItem {
+  readonly target: string;
+  /** Spoken or written hint shown with the prompt. */
+  readonly cue: string;
+  readonly morph: SemanticMorphKey;
+  readonly morphLabel: string;
+  readonly distractors: readonly string[];
+}
+
+/** One rung of the adaptive reading ladder (zone of proximal development). */
+export interface ReadingStage {
+  readonly id: number;
+  readonly name: string;
+  readonly desc: string;
+  readonly items: readonly ReadingItem[];
+}
+
+/** How `evaluateTrial` moved the learner: up a stage, back down one, or not at all. */
+export type ReadingTrialStatus = 'PROMOTED' | 'SCAFFOLDED_DOWN' | 'STEADY';
 
 export class AdaptiveReadingEngine {
+  /** Current stage, 1 to 6. */
+  stage: number;
+  autoZPD: boolean;
+  streak: number;
+  uiFontScale: number;
+  mirrorConfusionRate: number;
+  lastDistractorPullPx: number;
+  lastDecodeLatencyMs: number;
+  readingAccuracy: number;
+  hits: number;
+  misses: number;
+  zpdScore: number;
+  readonly stages: readonly ReadingStage[];
+
   constructor() {
     this.stage = 1;
     this.autoZPD = true;
@@ -215,11 +261,16 @@ export class AdaptiveReadingEngine {
     ];
   }
 
-  getCurrentStageConfig() {
+  getCurrentStageConfig(): ReadingStage {
     return this.stages[this.stage - 1] || this.stages[0];
   }
 
-  evaluateTrial(hit, decodeMs, distractorPullPx, totalMt) {
+  evaluateTrial(
+    hit: boolean,
+    decodeMs: number,
+    distractorPullPx: number,
+    totalMt: number,
+  ): ReadingTrialStatus {
     this.lastDecodeLatencyMs = Math.max(120, Math.min(2500, decodeMs));
     this.lastDistractorPullPx = distractorPullPx;
 

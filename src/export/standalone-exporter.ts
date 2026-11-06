@@ -1,6 +1,14 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
 import type { LabApp } from '../app/lab-app';
+import { byId } from '../util/dom';
+
+/** A detached deep copy of the whole page, ready to be cleaned up and serialized. */
+function cloneDocument(): HTMLElement {
+  const clone = document.documentElement.cloneNode(true);
+  if (!(clone instanceof HTMLElement)) {
+    throw new Error('The document element could not be cloned.');
+  }
+  return clone;
+}
 
 /** Single-file HTML export, fullscreen toggle and the borderless pop-out window (state baked in). */
 export class StandaloneExporter {
@@ -14,34 +22,31 @@ export class StandaloneExporter {
    * CLEAN DOM-CLONE STANDALONE HTML BUILDER (`buildCleanStandaloneHtmlString`):
    * Returns the sanitized, self-contained HTML string with your current state baked inside.
    */
-  buildCleanStandaloneHtmlString() {
+  buildCleanStandaloneHtmlString(): string {
     const savedState = this.app.persistence.saveToBrowser(this.app);
-    const docClone = document.documentElement.cloneNode(true);
+    const docClone = cloneDocument();
 
-    const oldBaked = docClone.querySelector('#bakedTillmannState');
-    if (oldBaked) oldBaked.remove();
+    docClone.querySelector('#bakedTillmannState')?.remove();
 
-    ['#jsonInspectorModal', '#cloudShareModal', '#gestureToast'].forEach((sel) => {
-      const el = docClone.querySelector(sel);
-      if (el) el.classList.add('hidden');
-    });
+    for (const sel of ['#jsonInspectorModal', '#cloudShareModal', '#gestureToast']) {
+      docClone.querySelector(sel)?.classList.add('hidden');
+    }
 
-    const drawerClone = docClone.querySelector('#telemetryDrawer');
+    const drawerClone = docClone.querySelector<HTMLElement>('#telemetryDrawer');
     if (drawerClone) {
       drawerClone.dataset.state = '0';
       drawerClone.classList.remove('proximity-glow');
     }
 
-    ['#metrics100Grid', '#guiElementsGrid', '#jsonModalCards'].forEach((sel) => {
+    for (const sel of ['#metrics100Grid', '#guiElementsGrid', '#jsonModalCards']) {
       const el = docClone.querySelector(sel);
       if (el) el.innerHTML = '';
-    });
+    }
 
-    const taClone = docClone.querySelector('#jsonModalTextarea');
+    const taClone = docClone.querySelector<HTMLTextAreaElement>('#jsonModalTextarea');
     if (taClone) taClone.value = '';
 
-    const audioBtnClone = docClone.querySelector('#btnHeroAudio');
-    if (audioBtnClone) audioBtnClone.classList.add('audio-on');
+    docClone.querySelector('#btnHeroAudio')?.classList.add('audio-on');
     const audioIconClone = docClone.querySelector('#heroAudioIcon');
     if (audioIconClone) audioIconClone.textContent = '🔊';
     const audioTextClone = docClone.querySelector('#heroAudioText');
@@ -73,7 +78,7 @@ export class StandaloneExporter {
    * If running inside Google Sites' nested iframe where `allowfullscreen` is stripped by Google's Caja/Atari wrapper,
    * automatically breaks out into a 100% borderless standalone Blob tab with current state preserved!
    */
-  async toggleTrueFullscreenOrBreakout() {
+  async toggleTrueFullscreenOrBreakout(): Promise<void> {
     const docEl = document.documentElement;
     const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
 
@@ -81,7 +86,9 @@ export class StandaloneExporter {
       try {
         if (document.exitFullscreen) await document.exitFullscreen();
         else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-      } catch (_) {}
+      } catch {
+        // Leaving fullscreen is best-effort: the browser may already have left it.
+      }
       return;
     }
 
@@ -98,7 +105,7 @@ export class StandaloneExporter {
         docEl.webkitRequestFullscreen();
         return;
       }
-    } catch (err) {
+    } catch {
       // Google Sites outer iframe blocked requestFullscreen(): pop out into a 100% borderless tab!
       this.popoutBorderlessWindow();
       return;
@@ -117,7 +124,7 @@ export class StandaloneExporter {
    * Breaks out of a bordered iframe (such as a standard Google Sites embed box)
    * into a 100% borderless full-viewport standalone window with all current trials & progress baked in.
    */
-  popoutBorderlessWindow() {
+  popoutBorderlessWindow(): void {
     if (import.meta.env.DEV) {
       this.app.hud.showToast(
         'ℹ️ POP-OUT NEEDS A PRODUCTION BUILD',
@@ -137,7 +144,7 @@ export class StandaloneExporter {
         'border-purple-400',
       );
     } else {
-      document.getElementById('cloudShareModal').classList.remove('hidden');
+      byId('cloudShareModal').classList.remove('hidden');
       this.app.hud.showToast(
         'ℹ️ ENABLE "FULL PAGE EMBED" IN GOOGLE SITES',
         'See Fix 1 in the modal to make your Google Sites page 100% edge-to-edge without borders!',
@@ -150,7 +157,7 @@ export class StandaloneExporter {
    * Packages and downloads the standalone `index.html` (current state baked in).
    * Only available from a production build: the dev server serves unbundled modules.
    */
-  exportStandaloneHTMLApp() {
+  exportStandaloneHTMLApp(): void {
     if (import.meta.env.DEV) {
       this.app.hud.showToast(
         'ℹ️ EXPORT NEEDS A PRODUCTION BUILD',

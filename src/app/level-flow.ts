@@ -1,5 +1,4 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
+import { byId, maybeById } from '../util/dom';
 import type { LabApp } from './lab-app';
 
 /** Level and envelope-tutor progression: stepping between levels, grounding to reading, stage UI sync. */
@@ -16,7 +15,7 @@ export class LevelFlow {
    * from Pulse Tap (1A) -> Shrinking Circle (1B) -> Tillmann Pointing (L2) -> Spiral Flight (L3) -> Adaptive Reading (L7).
    * Once in Reading or when doing well, Auto-Fade memory progressively engages!
    */
-  advanceEnvelopeTutor() {
+  advanceEnvelopeTutor(): boolean {
     this.app.phaseProgress++;
     const cfg = this.app.levelSteps[this.app.currentStepIdx];
     const quota = cfg ? cfg.quota : 4;
@@ -51,7 +50,7 @@ export class LevelFlow {
     return false;
   }
 
-  stepLevel(delta) {
+  stepLevel(delta: number) {
     if (this.app.currentStepIdx === 4) {
       if (delta > 0 && this.app.reading.stage < 6) {
         this.app.reading.stage++;
@@ -74,7 +73,7 @@ export class LevelFlow {
     this.applyStepIndex(this.app.currentStepIdx, false);
   }
 
-  applyStepIndex(idx, fromAutoTutor = false) {
+  applyStepIndex(idx: number, fromAutoTutor = false) {
     this.app.currentStepIdx = Math.max(0, Math.min(this.app.levelSteps.length - 1, idx));
     if (!fromAutoTutor) {
       this.app.phaseProgress = 0;
@@ -95,7 +94,7 @@ export class LevelFlow {
   syncStageUI() {
     const cfg = this.app.levelSteps[this.app.currentStepIdx];
     const quota = cfg ? cfg.quota : 4;
-    const stageBadge = document.getElementById('activeStageBadge');
+    const stageBadge = maybeById('activeStageBadge');
     if (stageBadge) {
       stageBadge.textContent =
         this.app.level === 7
@@ -103,7 +102,7 @@ export class LevelFlow {
           : cfg.badge;
     }
 
-    const envPill = document.getElementById('envelopePhasePill');
+    const envPill = maybeById('envelopePhasePill');
     if (envPill) {
       const reqHits = this.app.goalMemory.RequiredBaselineHits || 1;
       let memTag = '👁️ STEADY (NO FADE)';
@@ -119,15 +118,14 @@ export class LevelFlow {
         : `MANUAL MODE • ${memTag}`;
     }
 
-    document.querySelectorAll('.lvl-btn').forEach((b) => {
-      b.classList.toggle('active', parseInt(b.dataset.step, 10) === this.app.currentStepIdx);
+    document.querySelectorAll<HTMLElement>('.lvl-btn').forEach((b) => {
+      b.classList.toggle('active', parseInt(b.dataset.step ?? '', 10) === this.app.currentStepIdx);
     });
-    document.getElementById('navReadBadge').textContent = `S${this.app.reading.stage}`;
-    document.getElementById('l7StageName').textContent =
-      this.app.reading.getCurrentStageConfig().name;
+    byId('navReadBadge').textContent = `S${this.app.reading.stage}`;
+    byId('l7StageName').textContent = this.app.reading.getCurrentStageConfig().name;
 
-    const btnZero = document.getElementById('btnL1Zero');
-    const btnShrink = document.getElementById('btnL1Shrink');
+    const btnZero = byId('btnL1Zero');
+    const btnShrink = byId('btnL1Shrink');
     if (this.app.l1Mode === 'zero') {
       btnZero.className = 'ergo-sub-btn active';
       btnShrink.className = 'ergo-sub-btn';

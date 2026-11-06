@@ -1,11 +1,32 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
+import type {
+  ForeperiodDistribution,
+  ForeperiodRecord,
+  ForeperiodShape,
+  ForeperiodStats,
+} from '../types/telemetry';
 import { TimeStampUtil } from '../util/timestamp';
+
+/** One randomly assigned waiting time: its length, the distribution it came from and its hazard rate. */
+export interface ForeperiodDraw {
+  readonly tw: number;
+  readonly dist: ForeperiodShape;
+  readonly hazard: number;
+}
 
 /*************************************************************************
  * 4. PUT FOREPERIOD ENTRAINMENT, STOCHASTIC WAITING & HAZARD ENGINE
  *************************************************************************/
 export class ForeperiodHazardEngine {
+  mode: ForeperiodDistribution;
+  activeDist: ForeperiodShape;
+  readonly beatPeriodMs: number;
+  isoStreak: number;
+  entrainmentLockScore: number;
+  prematureCount: number;
+  currentTwMs: number;
+  currentHazard: number;
+  records: ForeperiodRecord[];
+
   constructor() {
     this.mode = 'AUTO_ADAPT';
     this.activeDist = 'ISOCHRONOUS';
@@ -18,7 +39,7 @@ export class ForeperiodHazardEngine {
     this.records = [];
   }
 
-  setMode(mode) {
+  setMode(mode: ForeperiodDistribution): void {
     this.mode = mode;
     if (mode !== 'AUTO_ADAPT') {
       this.activeDist = mode;
@@ -28,13 +49,13 @@ export class ForeperiodHazardEngine {
     }
   }
 
-  nextForeperiod() {
+  nextForeperiod(): ForeperiodDraw {
     if (this.mode === 'AUTO_ADAPT') {
       if (this.isoStreak < 4) {
         this.activeDist = 'ISOCHRONOUS';
       } else {
         const cycleIdx = Math.floor((this.isoStreak - 4) / 3) % 4;
-        const rot = ['EXPONENTIAL', 'UNIFORM', 'BIMODAL', 'WEIBULL'];
+        const rot: ForeperiodShape[] = ['EXPONENTIAL', 'UNIFORM', 'BIMODAL', 'WEIBULL'];
         this.activeDist = rot[cycleIdx];
       }
     } else {
@@ -75,7 +96,7 @@ export class ForeperiodHazardEngine {
     };
   }
 
-  instantaneousHazard(tMs, distName = this.activeDist) {
+  instantaneousHazard(tMs: number, distName: ForeperiodDistribution = this.activeDist): number {
     const tSec = tMs / 1000;
     switch (distName) {
       case 'ISOCHRONOUS': {
@@ -104,7 +125,7 @@ export class ForeperiodHazardEngine {
     }
   }
 
-  recordValidHit(tw, rt, dist) {
+  recordValidHit(tw: number, rt: number, dist: ForeperiodDistribution): void {
     const hazard = this.instantaneousHazard(tw, dist);
     const phaseErr = tw - this.beatPeriodMs;
     const ts = TimeStampUtil.nowPacket();
@@ -134,7 +155,11 @@ export class ForeperiodHazardEngine {
     }
   }
 
-  recordPrematureClick(elapsedWaitMs, assignedTw, dist) {
+  recordPrematureClick(
+    elapsedWaitMs: number,
+    assignedTw: number,
+    dist: ForeperiodDistribution,
+  ): void {
     this.prematureCount++;
     const ts = TimeStampUtil.nowPacket();
     this.records.push({
@@ -152,7 +177,7 @@ export class ForeperiodHazardEngine {
     if (this.records.length > 80) this.records.shift();
   }
 
-  computeStats() {
+  computeStats(): ForeperiodStats {
     const valid = this.records.filter((r) => !r.premature && r.rt > 90 && r.rt < 4500);
     if (valid.length < 2) {
       return {
@@ -197,7 +222,7 @@ export class ForeperiodHazardEngine {
     const slopeMsPerSec = denTw > 1e-4 ? num / denTw : 0;
     const corrTwRT = denTw > 1e-4 && denRt > 1e-4 ? num / Math.sqrt(denTw * denRt) : 0;
 
-    const bins = new Array(8).fill(0);
+    const bins = new Array<number>(8).fill(0);
     for (let i = 0; i < n; i++) {
       const b = Math.min(7, Math.floor((tws[i] - 350) / 400));
       if (b >= 0) bins[b]++;

@@ -1,19 +1,17 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
-
 /*************************************************************************
  * 2. RADIX-2 128-POINT 2D COMPLEX FFT ENGINE
  *************************************************************************/
 export class ComplexFFT {
-  static transform(re, im) {
+  /** In-place forward transform of the complex signal `re + i·im`; the length must be a power of two. */
+  static transform(re: Float64Array, im: Float64Array): void {
     const n = re.length;
     let j = 0;
     for (let i = 0; i < n; i++) {
       if (i < j) {
-        let tr = re[i];
+        const tr = re[i];
         re[i] = re[j];
         re[j] = tr;
-        let ti = im[i];
+        const ti = im[i];
         im[i] = im[j];
         im[j] = ti;
       }

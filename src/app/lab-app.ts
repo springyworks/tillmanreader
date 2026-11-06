@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
 import { VocalTractFormantEngine } from '../audio/vocal-tract-formant-engine';
 import { RuntimeWatchdog } from '../diagnostics/runtime-watchdog';
 import { AdaptiveReadingEngine } from '../engines/adaptive-reading-engine';
@@ -21,11 +19,33 @@ import { ArenaRenderer } from '../render/arena-renderer';
 import { ScoopVisorRenderer } from '../render/scoop-visor-renderer';
 import { ScopeRenderer } from '../render/scope-renderer';
 import { bindEvents } from '../ui/bindings';
+import { byId, get2d } from '../util/dom';
+import type { GestureType } from '../engines/gesture-decoder';
+import type { ReadingItem } from '../engines/adaptive-reading-engine';
+import type {
+  ActiveMorph,
+  AimTarget,
+  DrawerState,
+  GoalMemoryState,
+  L1Mode,
+  L1WaitState,
+  L2Shape,
+  Level,
+  LevelStep,
+  Point,
+  ReadingTarget,
+  Rect,
+  Scope3Mode,
+  ScoopVisorState,
+  SpiralState,
+  TrailSample,
+} from '../types/arena';
 
 /*************************************************************************
  * 9. MAIN LAB CONTROLLER, VIEW-SIZE SAFE ACTION FIELD & GUI DOODLING LOOP
  *************************************************************************/
 export class LabApp {
+  // Collaborators: the behaviour lives in these; LabApp wires them together and owns shared state.
   readonly panels: TelemetryPanels;
   readonly hud: Hud;
   readonly layout: LayoutController;
@@ -37,6 +57,77 @@ export class LabApp {
   readonly arenaRenderer: ArenaRenderer;
   readonly visorRenderer: ScoopVisorRenderer;
   readonly scopeRenderer: ScopeRenderer;
+
+  readonly canvas: HTMLCanvasElement;
+  readonly ctx: CanvasRenderingContext2D;
+  readonly overlayCanvas: HTMLCanvasElement;
+  readonly overlayCtx: CanvasRenderingContext2D;
+  readonly s1Canvas: HTMLCanvasElement;
+  readonly s1Ctx: CanvasRenderingContext2D;
+  readonly s2Canvas: HTMLCanvasElement;
+  readonly s2Ctx: CanvasRenderingContext2D;
+  readonly s3Canvas: HTMLCanvasElement;
+  readonly s3Ctx: CanvasRenderingContext2D;
+
+  readonly telemetry: TelemetryEngine;
+  readonly fpEngine: ForeperiodHazardEngine;
+  readonly reading: AdaptiveReadingEngine;
+  readonly sig100: Signature100Engine;
+  readonly persistence: LongitudinalPersistenceEngine;
+  readonly voiceEngine: VocalTractFormantEngine;
+  readonly gesture: GestureDecoder;
+  readonly guiEngine: GuiAffordanceDoodleEngine;
+
+  /** Semantic circle -> SVG morph celebration: whether it rewards or distracts is measured. */
+  semanticMorphEnabled: boolean;
+  activeMorphs: ActiveMorph[];
+  readonly scoopVisor: ScoopVisorState;
+
+  readonly levelSteps: readonly LevelStep[];
+  currentStepIdx: number;
+  level: Level;
+  l1Mode: L1Mode;
+  l2Shape: L2Shape;
+  firstTouchUnlocked: boolean;
+  /** Smart envelope-flying tutor state. */
+  autoScenarioEnabled: boolean;
+  phaseProgress: number;
+  groundingComplete: boolean;
+  scope3Mode: Scope3Mode;
+  /** Defaults to hidden so the play arena is unobstructed on launch. */
+  drawerState: DrawerState;
+
+  cursor: Point;
+  winCursor: Point;
+  trail: TrailSample[];
+  target: AimTarget | null;
+
+  l1WaitState: L1WaitState;
+  l1GreenTimestamp: number;
+  l1WaitStartMs: number;
+  l1WaitAssignedMs: number;
+  l1WaitTimer: number | undefined;
+  shrinkRadius: number;
+
+  trialStartTime: number;
+  trialStartPos: Point;
+  moveOnsetTime: number;
+  peakVelTime: number;
+  trialPeakSpeed: number;
+  decelOnsetTime: number;
+  dockEnterTime: number;
+  currentTrialDockMs: number;
+  currentTrialGesture: GestureType | null;
+
+  readonly goalMemory: GoalMemoryState;
+  spiral: SpiralState;
+  readingTargets: ReadingTarget[];
+  activeReadingItem: ReadingItem | null;
+
+  /** Hit area of the in-arena "enable voices" pill; null while voices are on. */
+  audioPromptRect: Rect | null;
+
+  private lastFrameTime: number;
 
   constructor() {
     this.panels = new TelemetryPanels(this);
@@ -51,16 +142,16 @@ export class LabApp {
     this.visorRenderer = new ScoopVisorRenderer(this);
     this.scopeRenderer = new ScopeRenderer(this);
 
-    this.canvas = document.getElementById('gameArena');
-    this.ctx = this.canvas.getContext('2d');
-    this.overlayCanvas = document.getElementById('guiDoodleOverlay');
-    this.overlayCtx = this.overlayCanvas.getContext('2d');
-    this.s1Canvas = document.getElementById('canvasScope1');
-    this.s1Ctx = this.s1Canvas.getContext('2d');
-    this.s2Canvas = document.getElementById('canvasScope2');
-    this.s2Ctx = this.s2Canvas.getContext('2d');
-    this.s3Canvas = document.getElementById('canvasScope3');
-    this.s3Ctx = this.s3Canvas.getContext('2d');
+    this.canvas = byId('gameArena', HTMLCanvasElement);
+    this.ctx = get2d(this.canvas);
+    this.overlayCanvas = byId('guiDoodleOverlay', HTMLCanvasElement);
+    this.overlayCtx = get2d(this.overlayCanvas);
+    this.s1Canvas = byId('canvasScope1', HTMLCanvasElement);
+    this.s1Ctx = get2d(this.s1Canvas);
+    this.s2Canvas = byId('canvasScope2', HTMLCanvasElement);
+    this.s2Ctx = get2d(this.s2Canvas);
+    this.s3Canvas = byId('canvasScope3', HTMLCanvasElement);
+    this.s3Ctx = get2d(this.s3Canvas);
 
     this.telemetry = new TelemetryEngine();
     this.fpEngine = new ForeperiodHazardEngine();
@@ -69,20 +160,14 @@ export class LabApp {
     this.sig100 = new Signature100Engine();
     this.persistence = new LongitudinalPersistenceEngine();
     this.voiceEngine = new VocalTractFormantEngine(); // Strictly DEFAULT OFF until user taps Hero Audio Button!
-    this.gesture = new GestureDecoder((type, info) => this.hud.handleEmbodiedGesture(type, info));
+    this.gesture = new GestureDecoder((type) => this.hud.handleEmbodiedGesture(type));
     this.guiEngine = new GuiAffordanceDoodleEngine((type, gui, meta) =>
       this.hud.handleGuiDoodle(type, gui, meta),
     );
 
-    // Cached layout geometry so 60Hz rAF loop never triggers Android DOM reflow loops
-    this._cachedSafeCenter = null;
-    this._lastSafeCacheMs = 0;
-    this._lastGuiScanMs = 0;
-    this._resizeTimer = null;
-
     // Semantic Circle -> SVG Morphing State (Celebrates hits & measures whether it's rewarding or distracting!)
     this.semanticMorphEnabled = true;
-    this.activeMorphs = []; // { x, y, r, startTime, durationMs, semanticKey, label, gazeDwellMs }
+    this.activeMorphs = [];
 
     /**
      * ANTI-FAT-FINGER (FFP) OFFSET SCOOP-VISOR DRAG & DROP RIG:
@@ -161,7 +246,7 @@ export class LabApp {
     this.phaseProgress = 0;
     this.groundingComplete = true;
 
-    this.scope3Mode = 'BULLSEYE_MAP'; // 'BULLSEYE_MAP' | 'FITTS' | 'PUT_HAZARD'
+    this.scope3Mode = 'BULLSEYE_MAP';
     this.drawerState = 0; // Default hidden (State 0) so the play arena is 100% unobstructed on launch
     this.cursor = { x: 450, y: 260 };
     this.winCursor = { x: 450, y: 340 };
@@ -172,7 +257,7 @@ export class LabApp {
     this.l1GreenTimestamp = 0;
     this.l1WaitStartMs = 0;
     this.l1WaitAssignedMs = 1100;
-    this.l1WaitTimer = null;
+    this.l1WaitTimer = undefined;
     this.shrinkRadius = 78;
 
     this.trialStartTime = 0;
@@ -187,7 +272,7 @@ export class LabApp {
 
     // Parameterized Top-Goal Hover-to-Reveal & Working-Memory State (Defaults to AUTO_PROG)
     this.goalMemory = {
-      mode: 'AUTO_PROG', // 'ALWAYS' | 'PEEK_1200' | 'MEM_500' | 'AUTO_PROG'
+      mode: 'AUTO_PROG',
       initialShowMs: 900,
       fadeDurationMs: 1100, // Responsive 1.1s cosine fade-away duration
       RequiredBaselineHits: 1, // Adult-adaptive: 1 fast hit unlocks goal-hiding immediately!
@@ -212,6 +297,7 @@ export class LabApp {
     };
     this.readingTargets = [];
     this.activeReadingItem = null;
+    this.audioPromptRect = null;
 
     this.layout.setupCanvases();
     this.guiEngine.scanDOMElements();
@@ -253,40 +339,12 @@ export class LabApp {
     this.layout.setDrawerState(0);
     this.flow.syncStageUI();
     this.spawner.spawnForCurrentLevel();
-    this.sig100.computeAll(
-      this.telemetry,
-      this.gesture,
-      this.reading,
-      this.drawerState,
-      this.fpEngine,
-      this.guiEngine,
-    );
+    this.computeSignature();
     this.panels.update100MetricDOM();
     this.panels.updateGuiRegistryDOM();
 
     // Debounced ResizeObserver with dimension-delta guard so Android Chrome never enters a resize loop
-    if (window.ResizeObserver) {
-      let lastObsW = 0,
-        lastObsH = 0;
-      this.resizeObs = new ResizeObserver((entries) => {
-        const cr = entries[0] && entries[0].contentRect;
-        if (cr) {
-          if (Math.abs(cr.width - lastObsW) < 3 && Math.abs(cr.height - lastObsH) < 3) {
-            return;
-          }
-          lastObsW = cr.width;
-          lastObsH = cr.height;
-        }
-        clearTimeout(this._resizeTimer);
-        this._resizeTimer = setTimeout(() => {
-          this._cachedSafeCenter = null;
-          this.layout.setupCanvases();
-          this.guiEngine.scanDOMElements();
-          this.layout.clampActiveTargetsToSafeView();
-        }, 80);
-      });
-      this.resizeObs.observe(document.getElementById('arenaContainer'));
-    }
+    this.layout.observeResize(byId('arenaContainer'));
 
     RuntimeWatchdog.runSelfTests(this);
 
@@ -294,19 +352,26 @@ export class LabApp {
     requestAnimationFrame((t) => this.loop(t));
   }
 
-  loop(now) {
+  /** Refreshes the 100-metric signature from the live engines. */
+  computeSignature(): void {
+    this.sig100.computeAll({
+      telemetry: this.telemetry,
+      gesture: this.gesture,
+      reading: this.reading,
+      fpEngine: this.fpEngine,
+      guiEngine: this.guiEngine,
+      drawerState: this.drawerState,
+      voiceUtterances: this.voiceEngine.utteranceCount,
+      morphRewardDwellMs: this.persistence.morphRewardDwellMs,
+    });
+  }
+
+  loop(now: number) {
     this.layout.enforceOnScreenGuard();
 
     if (now - this.lastFrameTime > 95) {
       this.telemetry.computeFFT();
-      this.sig100.computeAll(
-        this.telemetry,
-        this.gesture,
-        this.reading,
-        this.drawerState,
-        this.fpEngine,
-        this.guiEngine,
-      );
+      this.computeSignature();
       if (this.drawerState === 2) {
         this.panels.update100MetricDOM();
         this.panels.updateGuiRegistryDOM();
@@ -331,11 +396,11 @@ export class LabApp {
   }
 
   // Public facade: stable entry points used by engines, the watchdog and the console.
-  stepLevel(delta) {
+  stepLevel(delta: number) {
     return this.flow.stepLevel(delta);
   }
 
-  applyStepIndex(idx, fromAutoTutor = false) {
+  applyStepIndex(idx: number, fromAutoTutor = false) {
     return this.flow.applyStepIndex(idx, fromAutoTutor);
   }
 
@@ -351,7 +416,7 @@ export class LabApp {
     return this.layout.getSafeArenaCenter(forceRefresh);
   }
 
-  showToast(title, sub, borderClass) {
+  showToast(title: string, sub: string, borderClass: string) {
     return this.hud.showToast(title, sub, borderClass);
   }
 

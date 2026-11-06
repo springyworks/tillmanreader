@@ -1,10 +1,21 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
+import type { ForeperiodRecord, TrialInput } from '../types/telemetry';
+
+/** A recorded foreperiod before it is stamped with the time it is loaded at. */
+export type PresetForeperiodRecord = Omit<
+  ForeperiodRecord,
+  't' | 'unixMs' | 'perfNowUs' | 'isoTime'
+>;
+
+/** A recorded session: its foreperiod records and its pointing trials. */
+export interface PresetLog {
+  readonly records: readonly PresetForeperiodRecord[];
+  readonly trials: readonly TrialInput[];
+}
 
 /*************************************************************************
  * 1. USER'S ACTUAL TELEMETRY DATASETS (66-TRIAL BULLSEYE LOG + 48-LOG + 25-LOG)
  *************************************************************************/
-export const PRESET_66_BULLSEYE_LOG = {
+export const PRESET_66_BULLSEYE_LOG: PresetLog = {
   records: [
     { tw: 1100, rt: 2293, dist: 'ISOCHRONOUS', hazard: 4.5, premature: false, phaseErrorMs: 0 },
     { tw: 1100, rt: 622, dist: 'ISOCHRONOUS', hazard: 4.5, premature: false, phaseErrorMs: 0 },
@@ -969,7 +980,7 @@ export const PRESET_66_BULLSEYE_LOG = {
   ],
 };
 
-export const PRESET_PUT_32_LOG = {
+export const PRESET_PUT_32_LOG: PresetLog = {
   records: [
     { tw: 1100, rt: 2293, dist: 'ISOCHRONOUS', hazard: 4.5, premature: false, phaseErrorMs: 0 },
     { tw: 1100, rt: 622, dist: 'ISOCHRONOUS', hazard: 4.5, premature: false, phaseErrorMs: 0 },
@@ -1458,7 +1469,7 @@ export const PRESET_PUT_32_LOG = {
   ],
 };
 
-export const PRESET_25_TRIALS = [
+export const PRESET_25_TRIALS: readonly TrialInput[] = [
   {
     id: 0.15,
     mt: 856.6,

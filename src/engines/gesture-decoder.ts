@@ -1,11 +1,64 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
+import type { Point } from '../types/arena';
+
+/** The pointer gestures the decoder recognises. */
+export type GestureType = 'NO_SHAKE' | 'YES_NOD' | 'RAGE_SCRIBBLE';
+
+/** Payload of `NO_SHAKE`: a wide, flat back-and-forth sweep. */
+export interface NoShakeInfo {
+  spanX: number;
+  vxFlips: number;
+  pathLen: number;
+}
+
+/** Payload of `YES_NOD`: a tall, narrow up-and-down sweep. */
+export interface YesNodInfo {
+  spanY: number;
+  vyFlips: number;
+  pathLen: number;
+}
+
+/** Payload of `RAGE_SCRIBBLE`: a long path that reverses on both axes. */
+export interface RageScribbleInfo {
+  pathLen: number;
+}
+
+/** Measurements of a recognised gesture; the shape depends on its `GestureType`. */
+export type GestureInfo = NoShakeInfo | YesNodInfo | RageScribbleInfo;
+
+export type GestureCallback = (type: GestureType, info: GestureInfo) => void;
+
+/** Recognised gestures so far; `inspect` is bumped by the drawer bindings, not by the decoder. */
+export interface GestureCounts {
+  no: number;
+  yes: number;
+  rage: number;
+  inspect: number;
+}
+
+/** A timestamped pointer position inside the decoder's sliding window. */
+export interface GestureSample extends Point {
+  t: number;
+}
+
+/** One point of the fading ribbon drawn after a gesture; the renderer decays `alpha`. */
+export interface RibbonPoint extends Point {
+  alpha: number;
+}
 
 /*************************************************************************
  * 5. EMBODIED GESTURE & USABILITY DECODER
  *************************************************************************/
 export class GestureDecoder {
-  constructor(onGestureCallback) {
+  readonly onGesture: GestureCallback;
+  samples: GestureSample[];
+  readonly counts: GestureCounts;
+  lastTriggerTime: number;
+  activeRibbon: RibbonPoint[];
+  ribbonColor: string;
+  lastSignSwapRate: number;
+  lastAspectXY: number;
+
+  constructor(onGestureCallback: GestureCallback) {
     this.onGesture = onGestureCallback;
     this.samples = [];
     this.counts = { no: 0, yes: 0, rage: 0, inspect: 0 };
@@ -16,7 +69,7 @@ export class GestureDecoder {
     this.lastAspectXY = 1.0;
   }
 
-  pushSample(x, y, t) {
+  pushSample(x: number, y: number, t: number): void {
     this.samples.push({ x, y, t });
     const cutoff = t - 440;
     while (this.samples.length > 0 && this.samples[0].t < cutoff) {

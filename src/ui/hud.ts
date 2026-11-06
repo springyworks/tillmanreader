@@ -1,32 +1,38 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
 import type { LabApp } from '../app/lab-app';
+import type { GestureType } from '../engines/gesture-decoder';
+import type {
+  GuiDoodleMeta,
+  GuiDoodleType,
+  GuiRegistryEntry,
+} from '../engines/gui-affordance-doodle-engine';
+import { byId, maybeById } from '../util/dom';
 
 /** Toasts, HUD/telemetry text and the visual feedback for GUI-doodle and embodied-gesture events. */
 export class Hud {
   private readonly app: LabApp;
+  private toastTimer: number | undefined;
 
   constructor(app: LabApp) {
     this.app = app;
   }
 
-  showToast(title, sub, borderClass) {
-    const toast = document.getElementById('gestureToast');
+  showToast(title: string, sub: string, borderClass: string): void {
+    const toast = byId('gestureToast');
     toast.className = `bg-slate-900/95 border-2 ${borderClass} rounded-lg px-3 py-1.5 shadow-xl transition-all`;
-    document.getElementById('gestureToastTitle').textContent = title;
-    document.getElementById('gestureToastSub').textContent = sub;
+    byId('gestureToastTitle').textContent = title;
+    byId('gestureToastSub').textContent = sub;
     toast.classList.remove('hidden');
-    clearTimeout(this.app.toastTimer);
-    this.app.toastTimer = setTimeout(() => toast.classList.add('hidden'), 3200);
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => toast.classList.add('hidden'), 3200);
   }
 
-  updateHUDText() {
-    const badge = document.getElementById('hudModeBadge');
-    const title = document.getElementById('hudTitle');
-    const l1Sub = document.getElementById('l1SubControls');
-    const l1Fp = document.getElementById('l1ForeperiodControls');
-    const l2Sub = document.getElementById('l2SubControls');
-    const l7Sub = document.getElementById('l7SubControls');
+  updateHUDText(): void {
+    const badge = maybeById('hudModeBadge');
+    const title = maybeById('hudTitle');
+    const l1Sub = maybeById('l1SubControls');
+    const l1Fp = maybeById('l1ForeperiodControls');
+    const l2Sub = maybeById('l2SubControls');
+    const l7Sub = maybeById('l7SubControls');
 
     if (l1Sub)
       l1Sub.className =
@@ -54,54 +60,52 @@ export class Hud {
     } else if (this.app.level === 3) {
       badge.textContent = 'OSI L3 • SPIRAL STEERING';
       title.textContent = 'Continuous Accot-Zhai Spiral Tunnel (Scaled to Safe Action Field)';
-    } else if (this.app.level === 7) {
+    } else {
       const st = this.app.reading.getCurrentStageConfig();
       badge.textContent = `OSI L7 • ${st.name.toUpperCase()}`;
       title.textContent = st.desc;
     }
   }
 
-  updateTextTelemetry() {
+  updateTextTelemetry(): void {
+    const tel = this.app.telemetry;
     const fpStats = this.app.fpEngine.computeStats();
-    const setTxt = (id, val) => {
-      const el = document.getElementById(id);
+    const setTxt = (id: string, val: string): void => {
+      const el = maybeById(id);
       if (el) el.textContent = val;
     };
 
-    setTxt('sumRt0', `${Math.round(this.app.telemetry.rt0BaselineMs)}ms`);
+    setTxt('sumRt0', `${Math.round(tel.rt0BaselineMs)}ms`);
     setTxt('sumMu', `${fpStats.mu}ms`);
     setTxt('sumTau', `${fpStats.tau}ms`);
     setTxt('sumGuiGaze', this.app.guiEngine.activeFocusId);
 
-    setTxt('hdrCenterBias', `${Math.round(this.app.telemetry.meanNormRadiusPct * 100)}% R`);
-    setTxt('hdrViewID', `+${this.app.telemetry.selfImposedTaxBits.toFixed(1)}b`);
+    setTxt('hdrCenterBias', `${Math.round(tel.meanNormRadiusPct * 100)}% R`);
+    setTxt('hdrViewID', `+${tel.selfImposedTaxBits.toFixed(1)}b`);
 
-    setTxt(
-      'scope1Stat',
-      `${this.app.telemetry.estimatedHz} Hz (±${this.app.telemetry.jitterMs.toFixed(1)}ms)`,
-    );
-    setTxt('s1Coalesced', `${this.app.telemetry.coalescedRatio.toFixed(1)}x`);
-    setTxt('s1Dwell', `${Math.round(this.app.telemetry.lastDwellMs)}ms`);
-    setTxt('s1Slip', `${this.app.telemetry.lastSlipPx.toFixed(1)}px`);
+    setTxt('scope1Stat', `${tel.estimatedHz} Hz (±${tel.jitterMs.toFixed(1)}ms)`);
+    setTxt('s1Coalesced', `${tel.coalescedRatio.toFixed(1)}x`);
+    setTxt('s1Dwell', `${Math.round(tel.lastDwellMs)}ms`);
+    setTxt('s1Slip', `${tel.lastSlipPx.toFixed(1)}px`);
 
-    setTxt('scope2Stat', `Peak: ${this.app.telemetry.peakFreqHz.toFixed(1)} Hz`);
-    setTxt('fftBandLow', `${this.app.telemetry.bandLow.toFixed(1)}%`);
-    setTxt('fftBandTremor', `${this.app.telemetry.bandTremor.toFixed(1)}%`);
-    setTxt('fftBandNoise', `${this.app.telemetry.bandNoise.toFixed(1)}%`);
+    setTxt('scope2Stat', `Peak: ${tel.peakFreqHz.toFixed(1)} Hz`);
+    setTxt('fftBandLow', `${tel.bandLow.toFixed(1)}%`);
+    setTxt('fftBandTremor', `${tel.bandTremor.toFixed(1)}%`);
+    setTxt('fftBandNoise', `${tel.bandNoise.toFixed(1)}%`);
 
-    setTxt('s3Mu', `${Math.round(this.app.telemetry.meanNormRadiusPct * 100)}% R`);
-    setTxt('s3Tau', `${this.app.telemetry.effectiveWidthRatio.toFixed(2)}x`);
-    setTxt('s3Slope', `+${this.app.telemetry.selfImposedTaxBits.toFixed(2)} bits`);
-    setTxt('s3False', `${this.app.telemetry.trials.length} Kept`);
-    setTxt('scope4Badge', `${this.app.telemetry.trials.length} Trials`);
+    setTxt('s3Mu', `${Math.round(tel.meanNormRadiusPct * 100)}% R`);
+    setTxt('s3Tau', `${tel.effectiveWidthRatio.toFixed(2)}x`);
+    setTxt('s3Slope', `+${tel.selfImposedTaxBits.toFixed(2)} bits`);
+    setTxt('s3False', `${tel.trials.length} Kept`);
+    setTxt('scope4Badge', `${tel.trials.length} Trials`);
 
-    const last = this.app.telemetry.trials[this.app.telemetry.trials.length - 1];
+    const last = tel.trials.at(-1);
     if (last) {
       const tot = Math.max(1, last.hw + last.brain + last.ballistic + last.homing);
-      const barHw = document.getElementById('barHw');
-      const barBrain = document.getElementById('barBrain');
-      const barBal = document.getElementById('barBallistic');
-      const barHom = document.getElementById('barHoming');
+      const barHw = maybeById('barHw');
+      const barBrain = maybeById('barBrain');
+      const barBal = maybeById('barBallistic');
+      const barHom = maybeById('barHoming');
       if (barHw) barHw.style.width = `${(last.hw / tot) * 100}%`;
       if (barBrain) barBrain.style.width = `${(last.brain / tot) * 100}%`;
       if (barBal) barBal.style.width = `${(last.ballistic / tot) * 100}%`;
@@ -113,11 +117,9 @@ export class Hud {
     }
   }
 
-  handleGuiDoodle(type, targetGui, meta) {
-    document.getElementById('pillDoodleCount').textContent = String(
-      this.app.guiEngine.totalDoodleEvents,
-    );
-    const coach = document.getElementById('insightText');
+  handleGuiDoodle(type: GuiDoodleType, targetGui: GuiRegistryEntry, meta: GuiDoodleMeta): void {
+    byId('pillDoodleCount').textContent = String(this.app.guiEngine.totalDoodleEvents);
+    const coach = maybeById('insightText');
     if (type === 'ORBIT_ENCIRCLE') {
       const msg = `⭕ Orbit Doodle around [${targetGui.id}] (${targetGui.label})! Shannon DI=${targetGui.liveID.toFixed(2)} bits, Gaze Dwell=${Math.round(targetGui.dwellMs)}ms.`;
       if (coach) coach.textContent = msg;
@@ -130,17 +132,17 @@ export class Hud {
       const msg = `〰️ Eye-Proxy Reading Underline on [${targetGui.id}] (${targetGui.label}) — user is actively decoding this control.`;
       if (coach) coach.textContent = msg;
       this.showToast(`〰️ EYE-PROXY READING: ${targetGui.id}`, msg, 'border-amber-400');
-    } else if (type === 'HESITATION_SEARCH') {
+    } else {
       const msg = `❓ Stray Hesitation near [${targetGui.id}] (tortuosity ${meta.tortuosity}x) — illuminating nearby affordances.`;
       if (coach) coach.textContent = msg;
       this.showToast(`❓ AFFORDANCE SEARCH: ${targetGui.id}`, msg, 'border-purple-500/40');
     }
   }
 
-  handleEmbodiedGesture(type, info) {
+  handleEmbodiedGesture(type: GestureType): void {
     this.app.currentTrialGesture = type;
-    document.getElementById('gCountNo').textContent = this.app.gesture.counts.no;
-    document.getElementById('gCountYes').textContent = this.app.gesture.counts.yes;
+    byId('gCountNo').textContent = String(this.app.gesture.counts.no);
+    byId('gCountYes').textContent = String(this.app.gesture.counts.yes);
 
     if (type === 'NO_SHAKE') {
       this.app.voiceEngine.playPreset('GRRRR');
@@ -161,7 +163,7 @@ export class Hud {
         'Flow state confirmed — tightening target precision.',
         'border-emerald-500',
       );
-    } else if (type === 'RAGE_SCRIBBLE') {
+    } else {
       this.app.voiceEngine.playPreset('TSSJJ');
       this.app.reading.uiFontScale = 1.35;
       if (this.app.reading.stage > 1) this.app.reading.stage--;

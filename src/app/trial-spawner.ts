@@ -1,6 +1,6 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
+import type { SpiralPoint } from '../types/arena';
 import type { LabApp } from './lab-app';
+import { isPointingTarget } from './targets';
 
 /** Spawns the target, spiral or reading items for the current level and arms the trial timers. */
 export class TrialSpawner {
@@ -59,10 +59,11 @@ export class TrialSpawner {
           this.app.l1WaitState = 'READY_GREEN';
           this.app.l1GreenTimestamp = performance.now();
           this.app.trialStartTime = this.app.l1GreenTimestamp;
-          if (this.app.target) {
-            this.app.target.color = '#10b981';
-            this.app.target.label = 'TAP NOW!';
-            this.app.target.subLabel = `Waited ${fp.tw}ms`;
+          const waiting = this.app.target;
+          if (isPointingTarget(waiting)) {
+            waiting.color = '#10b981';
+            waiting.label = 'TAP NOW!';
+            waiting.subLabel = `Waited ${fp.tw}ms`;
           }
         }, fp.tw);
       } else {
@@ -114,8 +115,8 @@ export class TrialSpawner {
     this.app.layout.enforceOnScreenGuard();
   }
 
-  buildSpiral(cx, cy, maxR) {
-    const pts = [];
+  buildSpiral(cx: number, cy: number, maxR: number) {
+    const pts: SpiralPoint[] = [];
     const turns = 2.2;
     const steps = 150;
     const safeMaxR = Math.max(55, maxR);
@@ -138,7 +139,13 @@ export class TrialSpawner {
     this.app.target = null;
   }
 
-  spawnReadingTrial(safeLeft, safeTop, safeRight, playBottom, isMobile) {
+  spawnReadingTrial(
+    safeLeft: number,
+    safeTop: number,
+    safeRight: number,
+    playBottom: number,
+    isMobile: boolean,
+  ) {
     const st = this.app.reading.getCurrentStageConfig();
     const item = st.items[Math.floor(Math.random() * st.items.length)];
     this.app.activeReadingItem = item;

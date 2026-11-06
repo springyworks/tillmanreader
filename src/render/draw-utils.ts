@@ -1,7 +1,12 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
-
-export function drawRoundRect(ctx, x, y, w, h, r) {
+/** Traces a rounded-rectangle path on `ctx`; the caller decides whether to fill or stroke it. */
+export function drawRoundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
   const safeW = Math.max(1, w);
   const safeH = Math.max(1, h);
   const safeR = Math.max(0, Math.min(r, safeW / 2, safeH / 2));

@@ -1,16 +1,105 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
 import { drawRoundRect } from '../render/draw-utils';
+import type { Point } from '../types/arena';
+
+/** The doodle patterns the engine recognises around a GUI element. */
+export type GuiDoodleType =
+  'ORBIT_ENCIRCLE' | 'SCRATCH_FRICTION' | 'UNDERLINE_READ' | 'HESITATION_SEARCH';
+
+/** Measurements of a recognised doodle; only the field belonging to its `GuiDoodleType` is set. */
+export interface GuiDoodleMeta {
+  /** `ORBIT_ENCIRCLE`: total winding angle around the element, in degrees. */
+  windingDeg?: number;
+  /** `SCRATCH_FRICTION`: horizontal plus vertical direction reversals. */
+  flips?: number;
+  /** `UNDERLINE_READ`: horizontal extent of the sweep, in px. */
+  spanX?: number;
+  /** `HESITATION_SEARCH`: path length over chord length, formatted with one decimal. */
+  tortuosity?: string;
+}
+
+/** One `[data-gui-id]` element tracked by the engine: live geometry plus usage counters. */
+export interface GuiRegistryEntry {
+  readonly id: string;
+  readonly label: string;
+  el: HTMLElement;
+  rect: DOMRect;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  /** Effective target width W: the smaller side of the box, at least 16 px. */
+  effW: number;
+  /** Live Shannon index of difficulty (bits) from the pointer to the element centre. */
+  liveID: number;
+  distPx: number;
+  dwellMs: number;
+  /** Dwell while the pointer moved at eye-proxy reading speed (35 to 360 px/s). */
+  gazeScanMs: number;
+  visits: number;
+  clicks: number;
+  doodles: number;
+  /** Smoothed actual over expected approach time, raised by scratch-outs; above 1 = friction. */
+  struggleRatio: number;
+  /** CSS scale applied to the element, grown by scratch-out doodles (max 1.22). */
+  scale: number;
+  isHovered: boolean;
+}
+
+/** A timestamped pointer position in window (client) coordinates. */
+export interface TimedPoint extends Point {
+  t: number;
+}
+
+/** One sample of the recent pointer window; velocities and speed are in px/s. */
+export interface PointerSample extends TimedPoint {
+  vx: number;
+  vy: number;
+  speed: number;
+}
+
+/** The fading trail left by a recognised doodle, captioned at its end point. */
+export interface DoodleRibbon {
+  readonly pts: Point[];
+  readonly color: string;
+  alpha: number;
+  readonly label: string;
+}
+
+export type GuiDoodleCallback = (
+  type: GuiDoodleType,
+  gui: GuiRegistryEntry,
+  meta: GuiDoodleMeta,
+) => void;
 
 /*************************************************************************
  * 3. SELF-REFERENTIAL GUI-ELEMENT ID, LIVE SHANNON DI, EYE-PROXY GAZE
  *    & GUI-ELEMENT DOODLING ENGINE (`GuiAffordanceDoodleEngine`)
  *************************************************************************/
 export class GuiAffordanceDoodleEngine {
-  constructor(onDoodleCallback) {
+  readonly onDoodle: GuiDoodleCallback | undefined;
+  xrayEnabled: boolean;
+  readonly registry: Map<string, GuiRegistryEntry>;
+  samples: PointerSample[];
+  readonly doodleRibbons: DoodleRibbon[];
+  activeFocusId: string;
+  nearestGui: GuiRegistryEntry | null;
+  secondNearestGui: GuiRegistryEntry | null;
+  lastDoodleSummary: string;
+  totalDoodleEvents: number;
+  orbitCount: number;
+  underlineCount: number;
+  scratchCount: number;
+  hesitationCount: number;
+  lastTriggerMs: number;
+  lastPos: TimedPoint | null;
+  approachStartPoint: Point | null;
+  approachStartTime: number;
+  readonly approachTargetId: string | null;
+
+  constructor(onDoodleCallback?: GuiDoodleCallback) {
     this.onDoodle = onDoodleCallback;
     this.xrayEnabled = false; // Default OFF for calm, distraction-free Tillmann Games play
-    this.registry = new Map(); // guiId -> { id, label, el, rect, cx, cy, w, h, effW, liveID, distPx, dwellMs, visits, clicks, doodles, struggleRatio, scale }
+    this.registry = new Map(); // guiId -> GuiRegistryEntry
     this.samples = []; // Recent 680ms window pointer samples { x, y, t, vx, vy, speed }
     this.doodleRibbons = []; // Visual trails on full-window overlay
     this.activeFocusId = 'NONE';
@@ -29,16 +118,18 @@ export class GuiAffordanceDoodleEngine {
     this.approachTargetId = null;
   }
 
-  scanDOMElements() {
-    const nodes = document.querySelectorAll('[data-gui-id]');
+  scanDOMElements(): void {
+    const nodes = document.querySelectorAll<HTMLElement>('[data-gui-id]');
     nodes.forEach((el) => {
       const id = el.dataset.guiId;
+      if (id === undefined) return;
       const label = el.dataset.guiLabel || id;
       const r = el.getBoundingClientRect();
       const cx = r.left + r.width / 2;
       const cy = r.top + r.height / 2;
       const effW = Math.max(16, Math.min(r.width, r.height));
-      if (!this.registry.has(id)) {
+      const item = this.registry.get(id);
+      if (!item) {
         this.registry.set(id, {
           id,
           label,
@@ -61,7 +152,6 @@ export class GuiAffordanceDoodleEngine {
           isHovered: false,
         });
       } else {
-        const item = this.registry.get(id);
         item.el = el;
         item.rect = r;
         item.cx = cx;
@@ -73,7 +163,13 @@ export class GuiAffordanceDoodleEngine {
     });
   }
 
-  pushWindowPointer(clientX, clientY, now, rt0Ms = 220, motorSlopeB = 180) {
+  pushWindowPointer(
+    clientX: number,
+    clientY: number,
+    now: number,
+    rt0Ms = 220,
+    motorSlopeB = 180,
+  ): void {
     let dt = 11;
     let vx = 0,
       vy = 0,
@@ -93,8 +189,8 @@ export class GuiAffordanceDoodleEngine {
     }
 
     // Refresh bounding boxes periodically or use cached
-    let best = null;
-    let second = null;
+    let best: GuiRegistryEntry | null = null;
+    let second: GuiRegistryEntry | null = null;
     let minDist = Infinity;
     let secondDist = Infinity;
 
@@ -172,14 +268,15 @@ export class GuiAffordanceDoodleEngine {
     }
   }
 
-  recordGuiClick(guiId) {
+  recordGuiClick(guiId: string | undefined): void {
+    if (guiId === undefined) return;
     const item = this.registry.get(guiId);
     if (item) {
       item.clicks++;
     }
   }
 
-  detectGuiDoodle(targetGui, now) {
+  detectGuiDoodle(targetGui: GuiRegistryEntry, now: number): void {
     const pts = this.samples;
     let windingRad = 0;
     let pathLen = 0;
@@ -266,7 +363,13 @@ export class GuiAffordanceDoodleEngine {
     }
   }
 
-  triggerDoodle(type, targetGui, color, now, meta) {
+  triggerDoodle(
+    type: GuiDoodleType,
+    targetGui: GuiRegistryEntry,
+    color: string,
+    now: number,
+    meta: GuiDoodleMeta,
+  ): void {
     this.lastTriggerMs = now;
     this.totalDoodleEvents++;
     targetGui.doodles++;
@@ -308,7 +411,7 @@ export class GuiAffordanceDoodleEngine {
     }
   }
 
-  renderOverlay(ctx, w, h, cursor) {
+  renderOverlay(ctx: CanvasRenderingContext2D, w: number, h: number, cursor: Point): void {
     ctx.clearRect(0, 0, w, h);
 
     // 1. Render active doodle ribbons
@@ -363,7 +466,9 @@ export class GuiAffordanceDoodleEngine {
     }
 
     // 3. Draw Shannon ID vector from Cursor to Nearest GUI Element + Second Nearest
-    const targets = [this.nearestGui, this.secondNearestGui].filter(Boolean);
+    const targets = [this.nearestGui, this.secondNearestGui].filter(
+      (g): g is GuiRegistryEntry => g !== null,
+    );
     for (let idx = 0; idx < targets.length; idx++) {
       const g = targets[idx];
       if (g.distPx > 340) continue;

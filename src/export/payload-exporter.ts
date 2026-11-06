@@ -1,8 +1,11 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
-import type { LabApp } from '../app/lab-app';
 import { BUILD_INFO } from '../app/build-info';
+import type { LabApp } from '../app/lab-app';
+import type { GuiAffordanceElement } from '../types/telemetry';
+import { maybeById } from '../util/dom';
 import { TimeStampUtil } from '../util/timestamp';
+
+/** The ground-truth telemetry export: what the JSON inspector, clipboard and download all share. */
+export type GroundTruthPayload = ReturnType<PayloadExporter['buildPayloadObject']>;
 
 /** Builds the ground-truth telemetry payload and exposes it via the JSON inspector, clipboard and file download. */
 export class PayloadExporter {
@@ -14,9 +17,9 @@ export class PayloadExporter {
 
   buildPayloadObject() {
     const ts = TimeStampUtil.nowPacket();
-    const guiElementsArr = [];
+    const guiElements: GuiAffordanceElement[] = [];
     for (const g of this.app.guiEngine.registry.values()) {
-      guiElementsArr.push({
+      guiElements.push({
         id: g.id,
         label: g.label,
         liveShannonID: Number(g.liveID.toFixed(2)),
@@ -70,7 +73,7 @@ export class PayloadExporter {
         underlineCount: this.app.guiEngine.underlineCount,
         scratchCount: this.app.guiEngine.scratchCount,
         hesitationCount: this.app.guiEngine.hesitationCount,
-        elements: guiElementsArr,
+        elements: guiElements,
       },
       goalWorkingMemoryAnalysis: {
         mode: this.app.goalMemory.mode,
@@ -87,15 +90,15 @@ export class PayloadExporter {
     };
   }
 
-  openJsonInspectorModal(autoCopy = true) {
+  openJsonInspectorModal(autoCopy = true): void {
     this.app.persistence.saveToBrowser(this.app);
     const payload = this.buildPayloadObject();
     const jsonStr = JSON.stringify(payload, null, 2);
 
-    const modal = document.getElementById('jsonInspectorModal');
-    const ta = document.getElementById('jsonModalTextarea');
-    const sum = document.getElementById('jsonModalSummary');
-    const cards = document.getElementById('jsonModalCards');
+    const modal = maybeById('jsonInspectorModal');
+    const ta = maybeById('jsonModalTextarea', HTMLTextAreaElement);
+    const sum = maybeById('jsonModalSummary');
+    const cards = maybeById('jsonModalCards');
 
     if (sum) {
       sum.textContent = `Session #${this.app.persistence.sessionNumber} • ${payload.trials.length} Trials • Reading Stage ${this.app.reading.stage}/6 • Hit Offset ${(this.app.telemetry.meanNormRadiusPct * 100).toFixed(1)}% R • We/W=${this.app.telemetry.effectiveWidthRatio.toFixed(2)}x`;
@@ -135,17 +138,20 @@ export class PayloadExporter {
     }
   }
 
-  copyJSONToClipboard(showToastMsg = true) {
+  copyJSONToClipboard(showToastMsg = true): void {
     const payload = this.buildPayloadObject();
     const jsonStr = JSON.stringify(payload, null, 2);
-    const ta = document.getElementById('jsonModalTextarea');
-    if (ta && !document.getElementById('jsonInspectorModal').classList.contains('hidden')) {
+    const modal = maybeById('jsonInspectorModal');
+    const ta = maybeById('jsonModalTextarea', HTMLTextAreaElement);
+    if (ta && modal && !modal.classList.contains('hidden')) {
       ta.value = jsonStr;
       ta.focus();
       ta.select();
       try {
         document.execCommand('copy');
-      } catch (_) {}
+      } catch {
+        // Falls through to the async clipboard API below.
+      }
     } else {
       const tempTa = document.createElement('textarea');
       tempTa.value = jsonStr;
@@ -155,9 +161,12 @@ export class PayloadExporter {
       tempTa.select();
       try {
         document.execCommand('copy');
-      } catch (_) {}
+      } catch {
+        // Falls through to the async clipboard API below.
+      }
       document.body.removeChild(tempTa);
     }
+    // `navigator.clipboard` only exists in secure contexts.
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(jsonStr).catch(() => {});
     }
@@ -170,7 +179,7 @@ export class PayloadExporter {
     }
   }
 
-  exportJSON() {
+  exportJSON(): void {
     const payload = this.buildPayloadObject();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

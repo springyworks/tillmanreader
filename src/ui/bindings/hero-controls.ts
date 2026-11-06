@@ -1,69 +1,63 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
 import type { LabApp } from '../../app/lab-app';
+import { isVocalPresetName } from '../../audio/vocal-tract-formant-engine';
+import { byId, maybeById, onClick } from '../../util/dom';
 
 /** Hero bar: level arrows, fullscreen/pop-out, voice toggle and the phonetic soundboards. */
 export function bindHeroControls(app: LabApp): void {
   // Hero Prev / Next Level Buttons
-  document.getElementById('btnPrevLevel').addEventListener('click', () => app.flow.stepLevel(-1));
-  document.getElementById('btnNextLevel').addEventListener('click', () => app.flow.stepLevel(1));
+  byId('btnPrevLevel').addEventListener('click', () => app.flow.stepLevel(-1));
+  byId('btnNextLevel').addEventListener('click', () => app.flow.stepLevel(1));
 
   // Giant Top Fullscreen & Borderless Breakout Button
-  const btnFullscreen = document.getElementById('btnFullscreen');
-  if (btnFullscreen) {
-    btnFullscreen.addEventListener('click', (e) => {
-      e.stopPropagation();
-      app.standalone.toggleTrueFullscreenOrBreakout();
-    });
-  }
-  const btnPopoutNow = document.getElementById('btnPopoutBorderlessNow');
-  if (btnPopoutNow) {
-    btnPopoutNow.addEventListener('click', () => {
-      app.standalone.popoutBorderlessWindow();
-    });
-  }
+  onClick(
+    'btnFullscreen',
+    () => {
+      void app.standalone.toggleTrueFullscreenOrBreakout();
+    },
+    { stopPropagation: true },
+  );
+  onClick('btnPopoutBorderlessNow', () => app.standalone.popoutBorderlessWindow());
   document.addEventListener('fullscreenchange', () => {
-    const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
-    const fsTxt = document.getElementById('fsText');
+    const isFs = Boolean(document.fullscreenElement ?? document.webkitFullscreenElement);
+    const fsTxt = maybeById('fsText');
     if (fsTxt) fsTxt.textContent = isFs ? 'EXIT FULL' : 'FULLSCREEN';
     setTimeout(() => {
-      app._cachedSafeCenter = null;
+      app.layout.invalidateSafeCache();
       app.layout.setupCanvases();
       app.layout.clampActiveTargetsToSafeView();
     }, 120);
   });
 
   // Big Top Hero Audio Button (Default OFF -> Toggles Parametric Human Vocal-Tract & Animal Imitation Synthesizer)
-  const btnHeroAudio = document.getElementById('btnHeroAudio');
-  if (btnHeroAudio) {
-    btnHeroAudio.addEventListener('click', () => {
-      const isOn = app.voiceEngine.toggleAudio();
-      btnHeroAudio.classList.toggle('audio-on', isOn);
-      document.getElementById('heroAudioIcon').textContent = isOn ? '🔊' : '🔇';
-      document.getElementById('heroAudioText').textContent = isOn
-        ? 'VOICE & FX: ON'
-        : 'AUDIO: OFF (TAP FOR VOICE!)';
-      app.hud.showToast(
-        isOn ? '🔊 HUMAN VOCAL-TRACT SYNTH: ON!' : '🔇 AUDIO MUTED (OFF)',
-        isOn
-          ? 'Formant glissandos, asking prosody, tok-tok chicken, frog skeee & grrr active!'
-          : 'Audio returned to silent default.',
-        isOn ? 'border-amber-400' : 'border-rose-500',
-      );
-    });
-  }
+  onClick('btnHeroAudio', (btnHeroAudio) => {
+    const isOn = app.voiceEngine.toggleAudio();
+    btnHeroAudio.classList.toggle('audio-on', isOn);
+    byId('heroAudioIcon').textContent = isOn ? '🔊' : '🔇';
+    byId('heroAudioText').textContent = isOn ? 'VOICE & FX: ON' : 'AUDIO: OFF (TAP FOR VOICE!)';
+    app.hud.showToast(
+      isOn ? '🔊 HUMAN VOCAL-TRACT SYNTH: ON!' : '🔇 AUDIO MUTED (OFF)',
+      isOn
+        ? 'Formant glissandos, asking prosody, tok-tok chicken, frog skeee & grrr active!'
+        : 'Audio returned to silent default.',
+      isOn ? 'border-amber-400' : 'border-rose-500',
+    );
+  });
+
+  /** The soundboards switch the voice on (and the hero button with it) before they play. */
+  const enableVoiceFromSoundboard = (): void => {
+    if (app.voiceEngine.enabled) return;
+    app.voiceEngine.enabled = true;
+    maybeById('btnHeroAudio')?.classList.add('audio-on');
+    byId('heroAudioIcon').textContent = '🔊';
+    byId('heroAudioText').textContent = 'VOICE & FX: ON';
+  };
 
   // Vocal-Tract Soundboard Test Buttons inside Lab Drawer
-  document.querySelectorAll('.vfx-btn').forEach((btn) => {
+  document.querySelectorAll<HTMLElement>('.vfx-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!app.voiceEngine.enabled) {
-        app.voiceEngine.enabled = true;
-        const heroBtn = document.getElementById('btnHeroAudio');
-        if (heroBtn) heroBtn.classList.add('audio-on');
-        document.getElementById('heroAudioIcon').textContent = '🔊';
-        document.getElementById('heroAudioText').textContent = 'VOICE & FX: ON';
-      }
+      enableVoiceFromSoundboard();
       const preset = btn.dataset.vfx;
+      if (!isVocalPresetName(preset)) return;
       app.voiceEngine.playPreset(preset);
       app.hud.showToast(
         `🗣️ VOCAL TRACT: ${preset}`,
@@ -74,16 +68,10 @@ export function bindHeroControls(app: LabApp): void {
   });
 
   // Funny Phonetic Letter & Word Audition Buttons (Q -> kjiuueehh!, b -> buh-boing!, etc.)
-  document.querySelectorAll('.phon-btn').forEach((btn) => {
+  document.querySelectorAll<HTMLElement>('.phon-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!app.voiceEngine.enabled) {
-        app.voiceEngine.enabled = true;
-        const heroBtn = document.getElementById('btnHeroAudio');
-        if (heroBtn) heroBtn.classList.add('audio-on');
-        document.getElementById('heroAudioIcon').textContent = '🔊';
-        document.getElementById('heroAudioText').textContent = 'VOICE & FX: ON';
-      }
-      const phon = btn.dataset.phon;
+      enableVoiceFromSoundboard();
+      const phon = btn.dataset.phon ?? '';
       const jokeCaption = app.voiceEngine.speakGraphemeOrWord(phon, 'CELEBRATE');
       app.hud.showToast(
         `🤪 PHONETIC JOKE: "${phon}"`,

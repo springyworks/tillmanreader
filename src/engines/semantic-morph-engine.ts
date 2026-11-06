@@ -1,12 +1,19 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
+import type { SemanticMorphKey } from './adaptive-reading-engine';
 
 export class SemanticMorphEngine {
   /**
    * Renders a clean Circle morphing smoothly (p in [0..1]) into a vector SVG illustration
    * of what the word/letter means (house, book, ice cream, nose, forest, cat, sun, fish, rabbit, plane, dog, etc.)
    */
-  static renderMorph(ctx, x, y, r, progress, semanticKey, labelText) {
+  static renderMorph(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    r: number,
+    progress: number,
+    semanticKey: SemanticMorphKey,
+    labelText: string,
+  ): void {
     const p = Math.max(0, Math.min(1, progress));
     // Smooth elastic pop scale during morph
     const popScale = 1 + 0.24 * Math.sin(p * Math.PI);

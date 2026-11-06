@@ -1,13 +1,96 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
 import { PRESET_25_TRIALS, PRESET_66_BULLSEYE_LOG, PRESET_PUT_32_LOG } from '../data/presets';
 import { ComplexFFT } from './complex-fft';
 import { TimeStampUtil } from '../util/timestamp';
+import type { GoalMemoryMode, Point } from '../types/arena';
+import type { AimStrategy, TillmannTrialRecord, TrialInput, TrialRegime } from '../types/telemetry';
+import type { AdaptiveReadingEngine } from './adaptive-reading-engine';
+import type { ForeperiodHazardEngine } from './foreperiod-hazard-engine';
+
+/** One pointer sample of the movement history with its finite-difference kinematics (px, ms, px/s). */
+export interface PositionSample {
+  readonly x: number;
+  readonly y: number;
+  /** Time the sample was taken, as passed to `recordPointerMove`. */
+  readonly t: number;
+  readonly vx: number;
+  readonly vy: number;
+  readonly speed: number;
+  readonly accel: number;
+  readonly jerk: number;
+}
+
+/** Least-squares Fitts line `time = a + b · ID` with its R² and throughput `tp = 1000 / b` (bits/s). */
+export interface LinearFit {
+  readonly a: number;
+  readonly b: number;
+  readonly r2: number;
+  readonly tp: number;
+}
 
 /*************************************************************************
  * 7. TELEMETRY ENGINE (HARDWARE, KINEMATICS, FFT, MULTI-MANIFOLD FITTS)
  *************************************************************************/
 export class TelemetryEngine {
+  readonly dtHistory: number[];
+  lastEventTime: number;
+  coalescedRatio: number;
+  estimatedHz: number;
+  jitterMs: number;
+  inputToPhotonMs: number;
+
+  readonly posHistory: PositionSample[];
+  readonly fftSize: number;
+  readonly vxRing: Float64Array;
+  readonly vyRing: Float64Array;
+  ringIdx: number;
+  readonly fftSpectrum: Float64Array;
+  peakFreqHz: number;
+  bandLow: number;
+  bandTremor: number;
+  bandNoise: number;
+  posNegSpinRatio: number;
+
+  lastDownTime: number;
+  lastDownPos: Point;
+  lastDwellMs: number;
+  lastSlipPx: number;
+
+  instSpeed: number;
+  meanSpeed: number;
+  peakSpeed: number;
+  instVx: number;
+  instVy: number;
+  instAccel: number;
+  instJerk: number;
+  instSnap: number;
+  curvature: number;
+  readonly straightness: number;
+  readonly orthoDevPx: number;
+  readonly zeroCrossings: number;
+
+  aimStrategy: AimStrategy;
+  lastRadialErrPx: number;
+  lastNormRadiusPct: number;
+  meanNormRadiusPct: number;
+  effectiveWidthRatio: number;
+  selfImposedTaxBits: number;
+
+  goalMemoryMode: GoalMemoryMode;
+  goalPeekCount: number;
+  totalGoalHoverMs: number;
+  readonly lastTrialPeeks: number;
+  readonly lastTrialGoalHoverMs: number;
+  memoryDecayAlpha: number;
+
+  rt0BaselineMs: number;
+  trials: TillmannTrialRecord[];
+  regTotal: LinearFit;
+  regMotor: LinearFit;
+  regEffective: LinearFit;
+
+  /** Set by the layout controller on each layout pass; `declare` keeps it off the instance until then. */
+  declare viewDiagPx?: number;
+
   constructor() {
     this.dtHistory = [];
     this.lastEventTime = 0;
@@ -69,7 +152,7 @@ export class TelemetryEngine {
     this.regEffective = { a: 520, b: 132, r2: 0.91, tp: 7.58 };
   }
 
-  recordPointerMove(e, now) {
+  recordPointerMove(e: PointerEvent, now: number): void {
     const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     this.coalescedRatio = 0.9 * this.coalescedRatio + 0.1 * coalesced.length;
 
@@ -87,7 +170,7 @@ export class TelemetryEngine {
       this.lastEventTime = t;
     }
 
-    const prev = this.posHistory[this.posHistory.length - 1];
+    const prev: PositionSample | undefined = this.posHistory[this.posHistory.length - 1];
     const x = e.offsetX,
       y = e.offsetY;
     if (prev) {
@@ -126,7 +209,7 @@ export class TelemetryEngine {
     }
   }
 
-  updateHardwareStats() {
+  updateHardwareStats(): void {
     if (this.dtHistory.length < 6) return;
     const sorted = [...this.dtHistory].sort((a, b) => a - b);
     const median = sorted[Math.floor(sorted.length / 2)];
@@ -138,12 +221,12 @@ export class TelemetryEngine {
     this.inputToPhotonMs = 0.5 * median + 8.3;
   }
 
-  recordDown(x, y, now) {
+  recordDown(x: number, y: number, now: number): void {
     this.lastDownTime = now;
     this.lastDownPos = { x, y };
   }
 
-  recordUp(x, y, now) {
+  recordUp(x: number, y: number, now: number): void {
     if (this.lastDownTime > 0) {
       const dwell = now - this.lastDownTime;
       if (dwell > 5 && dwell < 1500) {
@@ -154,7 +237,7 @@ export class TelemetryEngine {
     }
   }
 
-  computeFFT() {
+  computeFFT(): void {
     const re = new Float64Array(128);
     const im = new Float64Array(128);
     for (let i = 0; i < 128; i++) {
@@ -203,7 +286,7 @@ export class TelemetryEngine {
     }
   }
 
-  classifyTrial(t) {
+  classifyTrial(t: TrialInput): TrialRegime {
     if (t.gestureTagged) return 'AFFECTIVE_GESTURE';
     if (t.mt > 30000) return 'AWAY_PAUSE';
     if ((t.dockInspectionMs && t.dockInspectionMs > 1200) || t.mt > 5500)
@@ -212,7 +295,7 @@ export class TelemetryEngine {
     return 'MOTOR_LOCKED';
   }
 
-  addTrial(trial) {
+  addTrial(trial: TrialInput): void {
     const ts = TimeStampUtil.nowPacket();
     if (!trial.unixMs) trial.unixMs = ts.unixMs;
     if (!trial.perfNowUs) trial.perfNowUs = ts.perfNowUs;
@@ -224,12 +307,13 @@ export class TelemetryEngine {
       trial.hitAngleRad = (this.trials.length * 1.1) % (Math.PI * 2);
     }
     this.lastNormRadiusPct = trial.normRadiusPct;
-    this.trials.push(trial);
+    // The in-place stamping above completes the object; the compiler cannot follow that.
+    this.trials.push(trial as TillmannTrialRecord);
     if (this.trials.length > 90) this.trials.shift();
     this.recomputeRegressions();
   }
 
-  recomputeRegressions() {
+  recomputeRegressions(): void {
     // Compute Mean Normalized Hit Radius (r_err / R) & Effective Width Ratio (We / W_nominal)
     const hitTrials = this.trials.filter((t) => Number.isFinite(t.normRadiusPct));
     if (hitTrials.length >= 2) {
@@ -270,7 +354,7 @@ export class TelemetryEngine {
     }
   }
 
-  fitLinear(pts) {
+  fitLinear(pts: readonly Point[]): LinearFit {
     const n = pts.length;
     let sx = 0,
       sy = 0,
@@ -294,7 +378,7 @@ export class TelemetryEngine {
     return { a, b, r2, tp: 1000 / b };
   }
 
-  loadPreset66(fpEngine, readingEngine) {
+  loadPreset66(fpEngine?: ForeperiodHazardEngine, readingEngine?: AdaptiveReadingEngine): void {
     this.trials = [];
     this.rt0BaselineMs = 443;
     for (const raw of PRESET_66_BULLSEYE_LOG.trials) {
@@ -319,7 +403,7 @@ export class TelemetryEngine {
     }
   }
 
-  loadPresetPut32(fpEngine) {
+  loadPresetPut32(fpEngine?: ForeperiodHazardEngine): void {
     this.trials = [];
     this.rt0BaselineMs = 445;
     for (const raw of PRESET_PUT_32_LOG.trials) {
@@ -337,7 +421,7 @@ export class TelemetryEngine {
     }
   }
 
-  loadPreset25(fpEngine) {
+  loadPreset25(fpEngine?: ForeperiodHazardEngine): void {
     this.trials = [];
     for (const raw of PRESET_25_TRIALS) {
       this.addTrial({ ...raw });

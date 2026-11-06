@@ -1,6 +1,6 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
 import type { LabApp } from '../app/lab-app';
+import type { MetricFilter } from '../engines/signature-100-engine';
+import { maybeById } from '../util/dom';
 
 /** Builds and refreshes the GUI-registry cards and the 100-metric signature grid in the telemetry drawer. */
 export class TelemetryPanels {
@@ -13,8 +13,8 @@ export class TelemetryPanels {
   /**
    * Builds the Self-Referential GUI-Element ID Registry cards inside #guiElementsGrid
    */
-  buildGuiRegistryDOM() {
-    const grid = document.getElementById('guiElementsGrid');
+  buildGuiRegistryDOM(): void {
+    const grid = maybeById('guiElementsGrid');
     if (!grid) return;
     grid.innerHTML = '';
     for (const g of this.app.guiEngine.registry.values()) {
@@ -41,17 +41,17 @@ export class TelemetryPanels {
   /**
    * Updates live Shannon ID, Eye-Proxy Gaze Dwell, Struggle Ratio & Doodles in #guiElementsGrid
    */
-  updateGuiRegistryDOM() {
-    const focusEl = document.getElementById('guiTableFocus');
-    const doodleEl = document.getElementById('guiTableLastDoodle');
+  updateGuiRegistryDOM(): void {
+    const focusEl = maybeById('guiTableFocus');
+    const doodleEl = maybeById('guiTableLastDoodle');
     if (focusEl) focusEl.textContent = this.app.guiEngine.activeFocusId;
     if (doodleEl) doodleEl.textContent = this.app.guiEngine.lastDoodleSummary;
 
     for (const g of this.app.guiEngine.registry.values()) {
-      const diEl = document.getElementById(`guiid-di-${g.id}`);
-      const dwEl = document.getElementById(`guiid-dwell-${g.id}`);
-      const stEl = document.getElementById(`guiid-strug-${g.id}`);
-      const doEl = document.getElementById(`guiid-dood-${g.id}`);
+      const diEl = maybeById(`guiid-di-${g.id}`);
+      const dwEl = maybeById(`guiid-dwell-${g.id}`);
+      const stEl = maybeById(`guiid-strug-${g.id}`);
+      const doEl = maybeById(`guiid-dood-${g.id}`);
       if (diEl) diEl.textContent = `${g.liveID.toFixed(1)}b`;
       if (dwEl) dwEl.textContent = `${Math.round(g.dwellMs)}ms`;
       if (stEl) stEl.textContent = `${g.struggleRatio}x`;
@@ -62,8 +62,8 @@ export class TelemetryPanels {
   /**
    * Builds the 100 Deterministic Mathematical Metrics cards inside #metrics100Grid
    */
-  build100MetricDOM() {
-    const grid = document.getElementById('metrics100Grid');
+  build100MetricDOM(): void {
+    const grid = maybeById('metrics100Grid');
     if (!grid) return;
     grid.innerHTML = '';
     for (const m of this.app.sig100.metrics) {
@@ -89,23 +89,23 @@ export class TelemetryPanels {
   /**
    * Updates all 100 Metric card values in #metrics100Grid
    */
-  update100MetricDOM() {
+  update100MetricDOM(): void {
     for (const m of this.app.sig100.metrics) {
-      const el = document.getElementById(`mval-${m.id}`);
-      if (el) el.textContent = m.value;
+      const el = maybeById(`mval-${m.id}`);
+      if (el) el.textContent = String(m.value);
     }
   }
 
   /**
    * Filters the 100-Metric Grid by Category (ALL, A, B, C, D, E, F)
    */
-  filter100Category(cat) {
+  filter100Category(cat: MetricFilter): void {
     this.app.sig100.activeCategory = cat;
-    document.querySelectorAll('.cat-pill').forEach((b) => {
+    document.querySelectorAll<HTMLElement>('.cat-pill').forEach((b) => {
       b.classList.toggle('active', b.dataset.cat === cat);
     });
     for (const m of this.app.sig100.metrics) {
-      const card = document.getElementById(`mcard-${m.id}`);
+      const card = maybeById(`mcard-${m.id}`);
       if (card) {
         card.style.display = cat === 'ALL' || m.cat === cat ? 'flex' : 'none';
       }

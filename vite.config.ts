@@ -14,7 +14,10 @@ const pkg = JSON.parse(
 /** Runs a git command; falls back when git or the repository history is unavailable. */
 function git(args: string[], fallback: string): string {
   try {
-    const out = execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const out = execFileSync('git', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
     return out.trim() || fallback;
   } catch {
     return fallback;

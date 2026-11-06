@@ -1,11 +1,96 @@
-// @ts-nocheck
-// TODO(typing): temporary while the original JavaScript is migrated module by module.
+/** Vowel and diphthong keys of the formant table. */
+export type VowelName = 'AA' | 'OO' | 'OE' | 'UU' | 'UI' | 'IJ' | 'IE' | 'EU' | 'EH' | 'UH' | 'MM';
+
+/** Centre frequencies of the first three formants (F1, F2, F3) in Hz. */
+export type FormantTriple = readonly [f1: number, f2: number, f3: number];
+
+/** Expressive and animal-imitation sounds that `playPreset` can voice. */
+export const VOCAL_PRESET_NAMES = [
+  'OH_WOOW',
+  'GRRRR',
+  'TSSJJ',
+  'HIHI',
+  'CHICKEN_TOK',
+  'FROG_SKEEE',
+  'ASK_GLISS',
+  'CAT_MIAUW',
+] as const;
+
+export type VocalPresetName = (typeof VOCAL_PRESET_NAMES)[number];
+
+/** Narrows a DOM string (such as a `data-vfx` attribute) to a preset `playPreset` can voice. */
+export function isVocalPresetName(value: string | undefined): value is VocalPresetName {
+  return VOCAL_PRESET_NAMES.some((name) => name === value);
+}
+
+/** `ASKING` voices a prompt with a rising question inflection; `CELEBRATE` plays the full phonetic joke. */
+export type SpeakMode = 'ASKING' | 'CELEBRATE';
+
+/** The part of a reading-game item that gets voiced: the grapheme or word to say. */
+export interface SpeakableReadingItem {
+  readonly target: string;
+}
+
+/** Timing and loudness shared by every synthesized sound; all times are in seconds. */
+export interface SoundEventOptions {
+  /** Delay from now until the sound starts. */
+  readonly startDelay?: number;
+  /** Length of the sound. */
+  readonly dur?: number;
+  /** Peak gain of the amplitude envelope. */
+  readonly gainLevel?: number;
+}
+
+/** One glottal note shaped by the three-formant filter bank; pitches and frequencies are in Hz. */
+export interface TractNoteOptions extends SoundEventOptions {
+  readonly f0Start?: number;
+  /** Optional pitch waypoint reached at about half of the note. */
+  readonly f0Mid?: number | null;
+  readonly f0End?: number;
+  /** Vowels whose formants the filter bank glides between. */
+  readonly vowelStart?: VowelName;
+  readonly vowelEnd?: VowelName;
+  /** Growl FM; only applied when both the rate and the depth are positive. */
+  readonly growlHz?: number;
+  readonly growlDepth?: number;
+  /** Pitch vibrato rate and depth; applied only when the depth is positive. */
+  readonly vibratoHz?: number;
+  readonly vibratoDepth?: number;
+}
+
+/** A band-passed noise burst (fricative, sibilant or plosive); frequencies are in Hz. */
+export interface FricativeOptions extends SoundEventOptions {
+  readonly freqStart?: number;
+  readonly freqEnd?: number;
+  /** Quality factor of the band-pass filter. */
+  readonly q?: number;
+}
+
+/** A comic oscillator glide such as a boing, cork pop or bubble; frequencies are in Hz. */
+export interface JokeToneOptions extends SoundEventOptions {
+  readonly fStart?: number;
+  readonly fEnd?: number;
+  /** Never `'custom'`: that waveform needs a periodic wave and cannot be set through `type`. */
+  readonly type?: Exclude<OscillatorType, 'custom'>;
+}
 
 /*************************************************************************
  * 6. ADAPTIVE 6-STAGE LEARNING-TO-READ ENGINE, VOCAL-TRACT FORMANT
  *    SYNTHESIZER & SEMANTIC SVG MORPHING
  *************************************************************************/
 export class VocalTractFormantEngine {
+  enabled: boolean;
+  ctx: AudioContext | null;
+  masterGain: GainNode | null;
+  noiseBuffer: AudioBuffer | null;
+  utteranceCount: number;
+  lastPresetPlayed: VocalPresetName | 'NONE';
+  lastPhoneticSubtitle: string;
+  nlVoice: SpeechSynthesisVoice | null;
+  readonly formants: Record<VowelName, FormantTriple>;
+  /** Stays `undefined` in browsers without speech synthesis, where `initSpeechSynthesisVoices` returns early. */
+  _voicesLoaded: boolean | undefined;
+
   /**
    * Pure Parametric Articulatory & Formant Vocal-Tract Synthesizer + Clear Human Speech
    * + Signature Tiny Vocal/Musical Joke Engine (Zero External WAVs!).
@@ -52,7 +137,7 @@ export class VocalTractFormantEngine {
     this.initSpeechSynthesisVoices();
   }
 
-  initSpeechSynthesisVoices() {
+  initSpeechSynthesisVoices(): void {
     if (!('speechSynthesis' in window)) return;
     this._voicesLoaded = false;
     const pickVoice = () => {
@@ -70,7 +155,9 @@ export class VocalTractFormantEngine {
             window.speechSynthesis.onvoiceschanged = null;
           }
         }
-      } catch (_) {}
+      } catch {
+        // Voice lookup is best effort; the formant synth works without a spoken voice.
+      }
     };
     pickVoice();
     if (!this._voicesLoaded && window.speechSynthesis.onvoiceschanged !== undefined) {
@@ -83,7 +170,7 @@ export class VocalTractFormantEngine {
    * with our parametric formant vocal-tract engine so words are 100% intelligible
    * AND accompanied by our formant character + tiny joke!
    */
-  speakClearHumanText(spokenText, pitch = 1.12, rate = 0.96) {
+  speakClearHumanText(spokenText: string, pitch = 1.12, rate = 0.96): void {
     if (!this.enabled || !('speechSynthesis' in window)) return;
     try {
       window.speechSynthesis.cancel();
@@ -94,10 +181,12 @@ export class VocalTractFormantEngine {
       utter.rate = rate;
       utter.volume = 0.92;
       window.speechSynthesis.speak(utter);
-    } catch (_) {}
+    } catch {
+      // Speech is an optional extra on top of the synthesized voice; never let it interrupt the sounds.
+    }
   }
 
-  ensureContext() {
+  ensureContext(): void {
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AudioCtx();
@@ -113,11 +202,11 @@ export class VocalTractFormantEngine {
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      void this.ctx.resume();
     }
   }
 
-  toggleAudio() {
+  toggleAudio(): boolean {
     this.enabled = !this.enabled;
     if (this.enabled) {
       this.ensureContext();
@@ -144,9 +233,10 @@ export class VocalTractFormantEngine {
     vibratoHz = 6,
     vibratoDepth = 8,
     gainLevel = 0.55,
-  }) {
+  }: TractNoteOptions): void {
     if (!this.enabled) return;
     this.ensureContext();
+    if (!this.ctx || !this.masterGain) return;
     const now = this.ctx.currentTime + startDelay;
 
     const fmStart = this.formants[vowelStart] || this.formants.AA;
@@ -222,9 +312,10 @@ export class VocalTractFormantEngine {
     freqEnd = 2200,
     q = 3.5,
     gainLevel = 0.45,
-  }) {
+  }: FricativeOptions): void {
     if (!this.enabled) return;
     this.ensureContext();
+    if (!this.ctx || !this.masterGain) return;
     const now = this.ctx.currentTime + startDelay;
 
     const src = this.ctx.createBufferSource();
@@ -259,9 +350,10 @@ export class VocalTractFormantEngine {
     fEnd = 600,
     type = 'sine',
     gainLevel = 0.35,
-  }) {
+  }: JokeToneOptions): void {
     if (!this.enabled) return;
     this.ensureContext();
+    if (!this.ctx || !this.masterGain) return;
     const now = this.ctx.currentTime + startDelay;
     const osc = this.ctx.createOscillator();
     const env = this.ctx.createGain();
@@ -284,14 +376,14 @@ export class VocalTractFormantEngine {
    * Every single letter and word has its own unmistakable acoustic signature!
    * Returns a subtitle string (e.g. `🤪 "kjiuueehh!" (lip-pop!)`) for visual reinforcement.
    */
-  speakGraphemeOrWord(rawKey, mode = 'CELEBRATE') {
+  speakGraphemeOrWord(rawKey: string | null | undefined, mode: SpeakMode = 'CELEBRATE'): string {
     if (!this.enabled) return '';
     this.ensureContext();
     this.utteranceCount++;
 
     const clean = String(rawKey || '').trim();
     const key = clean.toLowerCase();
-    let subtitle = `🔊 "${clean}"`;
+    let subtitle: string;
 
     // If mode === 'ASKING' (when prompt spawns), speak clearly with a gentle rising question inflection
     if (mode === 'ASKING') {
@@ -971,7 +1063,7 @@ export class VocalTractFormantEngine {
   /**
    * Plays Human Expressive & Animal Imitation Presets
    */
-  playPreset(presetName) {
+  playPreset(presetName: VocalPresetName): void {
     if (!this.enabled) return;
     this.utteranceCount++;
     this.lastPresetPlayed = presetName;
@@ -1169,7 +1261,10 @@ export class VocalTractFormantEngine {
   /**
    * Speaks/vocalizes a Reading Target or Semantic Morph Reward with expressive prosody
    */
-  speakReadingItem(item, style = 'ASKING') {
+  speakReadingItem(
+    item: SpeakableReadingItem | null | undefined,
+    style: SpeakMode = 'ASKING',
+  ): string {
     if (!this.enabled || !item) return '';
     return this.speakGraphemeOrWord(item.target, style);
   }
@@ -1177,7 +1272,7 @@ export class VocalTractFormantEngine {
   /**
    * Gentle playful bump vocalization when a distractor bubble is tapped
    */
-  speakDistractorBump(text = '') {
+  speakDistractorBump(_text = ''): void {
     if (!this.enabled) return;
     this.playPreset('GRRRR');
   }
