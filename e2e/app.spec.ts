@@ -1,23 +1,15 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-interface LabSnapshot {
+interface DragCoords {
   level: number;
-  drawerState: number;
   trialCount: number;
-  calmFadeUnlocked: boolean;
-  activeNickname: string;
   visorOffsetY: number;
   handleX: number;
   handleY: number;
-  visorX: number;
-  visorY: number;
-  goalCenterX: number;
-  goalCenterY: number;
   targetX: number;
   targetY: number;
   canvasLeft: number;
   canvasTop: number;
-  canvasWidth: number;
   canvasHeight: number;
 }
 
@@ -28,7 +20,11 @@ interface LabWindow {
     telemetry: { trials: unknown[] };
     persistence: { activeNickname: string; activeSlug: string };
     goalMemory: { calmFadeUnlocked: boolean; initialShowMs: number };
-    tutor: { tickers: Array<{ seq: number; summary: string }> };
+    tutor: {
+      baselineHitsRemaining: number;
+      tickers: Array<{ seq: number; summary: string; kind: string }>;
+    };
+    activeMorphs: Array<{ r: number; semanticKey: string }>;
     feedback: { entries: Array<{ guiId: string; comment: string }> };
     arenaRenderer: { lastGoalCenterRect: { x: number; y: number; w: number; h: number } | null };
     scoopVisor: {
@@ -38,14 +34,53 @@ interface LabWindow {
       visorX: number;
       visorY: number;
     };
+    target: { x: number; y: number; r: number } | null;
     readingTargets: Array<{ x: number; y: number; r: number; isTarget: boolean; text: string }>;
     canvas: HTMLCanvasElement;
     buildCleanStandaloneHtmlString(): string;
   };
 }
 
+async function readDragCoords(page: Page): Promise<DragCoords | null> {
+  return page.evaluate((): DragCoords | null => {
+    const app = (window as unknown as LabWindow).labApp;
+    if (!app) return null;
+    const activeTarget =
+      app.level === 7 ? (app.readingTargets.find((rt) => rt.isTarget) ?? null) : app.target;
+    if (!activeTarget) return null;
+    const rect = app.canvas.getBoundingClientRect();
+    return {
+      level: app.level,
+      trialCount: app.telemetry.trials.length,
+      visorOffsetY: app.scoopVisor.offsetY,
+      handleX: app.scoopVisor.handleX,
+      handleY: app.scoopVisor.handleY,
+      targetX: activeTarget.x,
+      targetY: activeTarget.y,
+      canvasLeft: rect.left,
+      canvasTop: rect.top,
+      canvasHeight: rect.height,
+    };
+  });
+}
+
+async function performScoopDragToTarget(page: Page, coords: DragCoords): Promise<void> {
+  const startClientX = coords.canvasLeft + coords.handleX + 6;
+  const startClientY = coords.canvasTop + coords.handleY + 5;
+  const endClientX = coords.canvasLeft + coords.targetX + 6;
+  const endClientY = coords.canvasTop + coords.targetY + coords.visorOffsetY + 5;
+
+  await page.mouse.move(startClientX, startClientY);
+  await page.mouse.down();
+  await page.mouse.move((startClientX + endClientX) / 2, (startClientY + endClientY) / 2, {
+    steps: 5,
+  });
+  await page.mouse.move(endClientX, endClientY, { steps: 5 });
+  await page.mouse.up();
+}
+
 test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
-  test('launches clean for a fresh learner with Embedded Tutor steady hold, Goal Center dock & 14/14 watchdog pass', async ({
+  test('opens on Level 2 Tillmann Baseline with both arrows at top-left, Goal Center dock & 14/14 watchdog pass', async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -56,9 +91,13 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
     await expect(page.locator('#watchdogText')).toHaveText('0 ERR • 14/14 PASS');
     await expect(page.locator('#telemetryDrawer')).toHaveAttribute('data-state', '0');
     await expect(page.locator('#btnHumanTutor')).toBeVisible();
+    await expect(page.locator('#btnPrevLevel')).toBeVisible();
+    await expect(page.locator('#btnNextLevel')).toBeVisible();
 
     const viewportCheck = await page.evaluate(() => {
       const header = document.getElementById('topHeader')?.getBoundingClientRect();
+      const prevBtn = document.getElementById('btnPrevLevel')?.getBoundingClientRect();
+      const nextBtn = document.getElementById('btnNextLevel')?.getBoundingClientRect();
       const arena = document.getElementById('arenaContainer')?.getBoundingClientRect();
       const drawer = document.getElementById('telemetryDrawer')?.getBoundingClientRect();
       const handleGrip = document
@@ -66,16 +105,22 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
         ?.getBoundingClientRect();
       const win = window as unknown as LabWindow;
       const app = win.labApp;
-      if (!header || !arena || !drawer || !handleGrip || !app) return null;
+      if (!header || !prevBtn || !nextBtn || !arena || !drawer || !handleGrip || !app) return null;
       const goalRect = app.arenaRenderer.lastGoalCenterRect;
+      const t = app.target;
 
       return {
         level: app.level,
+        baselineRem: app.tutor.baselineHitsRemaining,
         trialCount: app.telemetry.trials.length,
         calmFadeUnlocked: app.goalMemory.calmFadeUnlocked,
         activeNickname: app.persistence.activeNickname,
         vw: window.innerWidth,
         vh: window.innerHeight,
+        prevLeft: prevBtn.left,
+        nextLeft: nextBtn.left,
+        nextRight: nextBtn.right,
+        arrowsSameRow: Math.abs(prevBtn.top - nextBtn.top) <= 4,
         arenaHeight: arena.height,
         drawerBottom: drawer.bottom,
         drawerRight: drawer.right,
@@ -85,117 +130,110 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
           Math.abs(app.scoopVisor.visorX - (goalRect.x + goalRect.w / 2)) <= 6 &&
           app.scoopVisor.visorY >= goalRect.y &&
           app.scoopVisor.visorY <= goalRect.y + goalRect.h,
-        bubblesInsideAndClear: app.readingTargets.every(
-          (rt) =>
-            rt.x - rt.r >= 0 &&
-            rt.x + rt.r <= arena.width &&
-            rt.y - rt.r >= 0 &&
-            rt.y + rt.r <= arena.height &&
-            (!goalRect ||
-              rt.x + rt.r < goalRect.x ||
-              rt.x - rt.r > goalRect.x + goalRect.w ||
-              rt.y - rt.r > goalRect.y + goalRect.h),
-        ),
+        targetInsideAndClear:
+          t !== null &&
+          t.x - t.r >= 0 &&
+          t.x + t.r <= arena.width &&
+          t.y - t.r >= 0 &&
+          t.y + t.r <= arena.height &&
+          (!goalRect ||
+            t.x + t.r < goalRect.x ||
+            t.x - t.r > goalRect.x + goalRect.w ||
+            t.y - t.r > goalRect.y + goalRect.h),
       };
     });
 
     expect(errors).toEqual([]);
     expect(viewportCheck).not.toBeNull();
-    expect(viewportCheck?.level).toBe(7);
+    expect(viewportCheck?.level).toBe(2);
+    expect(viewportCheck?.baselineRem).toBe(3);
     expect(viewportCheck?.trialCount).toBe(0);
     expect(viewportCheck?.calmFadeUnlocked).toBe(false);
     expect(viewportCheck?.activeNickname).toBe('Beste leerling');
+    // Both ◀ and ▶ are side-by-side at top-left!
+    expect(viewportCheck?.arrowsSameRow).toBe(true);
+    expect(viewportCheck?.nextLeft).toBeGreaterThan(viewportCheck?.prevLeft ?? 0);
+    expect(viewportCheck?.nextRight).toBeLessThan((viewportCheck?.vw ?? 0) * 0.62);
     expect(viewportCheck?.arenaHeight).toBeGreaterThan(150);
     expect(viewportCheck?.drawerBottom).toBeLessThanOrEqual((viewportCheck?.vh ?? 0) + 1);
     expect(viewportCheck?.drawerRight).toBeLessThanOrEqual((viewportCheck?.vw ?? 0) + 1);
     expect(viewportCheck?.gripWidth).toBeGreaterThan(40);
     expect(viewportCheck?.visorDockedInGoal).toBe(true);
-    expect(viewportCheck?.bubblesInsideAndClear).toBe(true);
+    expect(viewportCheck?.targetInsideAndClear).toBe(true);
   });
 
-  test('does NOT teleport Scoop-Visor on stray arena taps and drags smoothly from Goal Center to score a hit', async ({
+  test('completes 3 Level 2 baseline circles into Level 7 Reading, spawns thin-ink morphs & supports top-left ◀ safety step-back', async ({
     page,
   }) => {
     await page.goto('/');
     await expect(page.locator('#watchdogText')).toHaveText('0 ERR • 14/14 PASS');
 
-    const before = await page.evaluate((): LabSnapshot | null => {
-      const app = (window as unknown as LabWindow).labApp;
-      if (!app) return null;
-      const target = app.readingTargets.find((rt) => rt.isTarget);
-      const gc = app.arenaRenderer.lastGoalCenterRect;
-      if (!target || !gc) return null;
-      const rect = app.canvas.getBoundingClientRect();
-      return {
-        level: app.level,
-        drawerState: app.drawerState,
-        trialCount: app.telemetry.trials.length,
-        calmFadeUnlocked: app.goalMemory.calmFadeUnlocked,
-        activeNickname: app.persistence.activeNickname,
-        visorOffsetY: app.scoopVisor.offsetY,
-        handleX: app.scoopVisor.handleX,
-        handleY: app.scoopVisor.handleY,
-        visorX: app.scoopVisor.visorX,
-        visorY: app.scoopVisor.visorY,
-        goalCenterX: gc.x + gc.w / 2,
-        goalCenterY: gc.y + gc.h / 2,
-        targetX: target.x,
-        targetY: target.y,
-        canvasLeft: rect.left,
-        canvasTop: rect.top,
-        canvasWidth: rect.width,
-        canvasHeight: rect.height,
-      };
-    });
+    const first = await readDragCoords(page);
+    expect(first).not.toBeNull();
+    if (!first) return;
+    expect(first.level).toBe(2);
 
-    expect(before).not.toBeNull();
-    if (!before) return;
-
-    // 1. Tap far away at bottom-left corner of arena -> Scoop-Visor MUST stay docked at Goal Center!
-    await page.mouse.click(before.canvasLeft + 24, before.canvasTop + before.canvasHeight - 24);
+    // 1. Stray tap far from Goal Center MUST NOT teleport Scoop-Visor
+    await page.mouse.click(first.canvasLeft + 24, first.canvasTop + first.canvasHeight - 24);
     const afterStrayTap = await page.evaluate(() => {
       const sv = (window as unknown as LabWindow).labApp?.scoopVisor;
       return sv ? { handleX: sv.handleX, handleY: sv.handleY } : null;
     });
-    expect(afterStrayTap?.handleX).toBe(before.handleX);
-    expect(afterStrayTap?.handleY).toBe(before.handleY);
+    expect(afterStrayTap?.handleX).toBe(first.handleX);
+    expect(afterStrayTap?.handleY).toBe(first.handleY);
 
-    // 2. Grab the Thumb Pad docked below Goal Center (slightly off-center to verify zero grab snap!) and drag onto target
-    const startClientX = before.canvasLeft + before.handleX + 8;
-    const startClientY = before.canvasTop + before.handleY + 6;
-    const endClientX = before.canvasLeft + before.targetX + 8;
-    const endClientY = before.canvasTop + before.targetY + before.visorOffsetY + 6;
+    // 2. Complete the 3 baseline circle drags on Level 2 -> must auto-transition to Level 7 Reading!
+    for (let i = 0; i < 3; i++) {
+      const c = await readDragCoords(page);
+      expect(c).not.toBeNull();
+      if (!c) return;
+      expect(c.level).toBe(2);
+      await performScoopDragToTarget(page, c);
+    }
 
-    await page.mouse.move(startClientX, startClientY);
-    await page.mouse.down();
-    await page.mouse.move((startClientX + endClientX) / 2, (startClientY + endClientY) / 2, {
-      steps: 6,
-    });
-    await page.mouse.move(endClientX, endClientY, { steps: 6 });
-    await page.mouse.up();
+    const readingCoords = await readDragCoords(page);
+    expect(readingCoords).not.toBeNull();
+    if (!readingCoords) return;
+    expect(readingCoords.level).toBe(7);
+    expect(readingCoords.trialCount).toBe(3);
 
-    const afterHit = await page.evaluate(() => {
+    // 3. Score a Reading Bubble hit on Level 7 -> spawns celebratory thin-ink morph & logs tutor ticker
+    await performScoopDragToTarget(page, readingCoords);
+
+    const afterReadHit = await page.evaluate(() => {
       const app = (window as unknown as LabWindow).labApp;
       return app
-        ? { trials: app.telemetry.trials.length, tickers: app.tutor.tickers.length }
+        ? {
+            level: app.level,
+            trials: app.telemetry.trials.length,
+            morphCount: app.activeMorphs.length,
+            tickers: app.tutor.tickers.length,
+          }
         : null;
     });
-    expect(afterHit?.trials).toBe(before.trialCount + 1);
-    expect(afterHit?.tickers).toBeGreaterThanOrEqual(2);
+    expect(afterReadHit?.level).toBe(7);
+    expect(afterReadHit?.trials).toBe(4);
+    expect(afterReadHit?.morphCount).toBeGreaterThanOrEqual(1);
+    expect(afterReadHit?.tickers).toBeGreaterThanOrEqual(3);
+
+    // 4. Top-left ◀ safety button steps cleanly back to Level 2 circles, and ▶ returns to Level 7
+    await page.locator('#btnPrevLevel').click();
+    expect(await page.evaluate(() => (window as unknown as LabWindow).labApp?.level)).toBe(2);
+    await page.locator('#btnNextLevel').click();
+    expect(await page.evaluate(() => (window as unknown as LabWindow).labApp?.level)).toBe(7);
   });
 
-  test('supports Ctrl+Alt+G accumulative GUI_ID capture, Human-Tutor tickers & isolated kid profiles', async ({
+  test('supports Ctrl+Alt+G accumulative GUI_ID capture, Voice Emotion + Bach Gloria controls & isolated kid profiles', async ({
     page,
   }) => {
     await page.goto('/');
 
-    // 1. Hover over the Top Goal Center box on Canvas (left of center visor ring) and press Ctrl+Alt+G
     const goalScreenPt = await page.evaluate(() => {
       const app = (window as unknown as LabWindow).labApp;
       const gc = app?.arenaRenderer.lastGoalCenterRect;
       const rect = app?.canvas.getBoundingClientRect();
       if (!gc || !rect) return null;
-      return { x: rect.left + gc.x + 18, y: rect.top + gc.y + gc.h / 2 };
+      return { x: rect.left + gc.x + 14, y: rect.top + gc.y + gc.h / 2 };
     });
     expect(goalScreenPt).not.toBeNull();
     if (!goalScreenPt) return;
@@ -208,7 +246,6 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
     await page.locator('#quickGuiCommentInput').press('Enter');
     await expect(page.locator('#quickGuiCommentModal')).toBeHidden();
 
-    // 2. Hover over the Hero Audio DOM button and press Ctrl+Alt+G again -> must ACCUMULATE!
     const audioBox = await page.locator('#btnHeroAudio').boundingBox();
     expect(audioBox).not.toBeNull();
     if (audioBox) {
@@ -219,11 +256,12 @@ test.describe('Tillmann Reader E2E (Desktop & Android Pixel 7)', () => {
       await page.locator('#quickGuiCommentInput').press('Enter');
     }
 
-    // 3. Open small Human-Tutor button, test Voice Emotion bar, react to a live Tutor Ticker, and create a grandchild profile
     await page.locator('#btnHumanTutor').click();
     await expect(page.locator('#humanTutorModal')).toBeVisible();
     await expect(page.locator('#voiceEmotionBar')).toBeVisible();
+    await expect(page.locator('#btnPreviewBachGloria')).toBeVisible();
     await page.locator('[data-emo="PLAYFUL_GIGGLE"]').click();
+    await page.locator('#btnPreviewBachGloria').click();
     await page.locator('#tutorTickerList button').first().click();
 
     await page.locator('#learnerNicknameInput').fill('Sem');

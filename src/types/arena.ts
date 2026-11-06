@@ -62,6 +62,8 @@ export interface ActiveMorph extends Target {
   semanticKey: SemanticMorphKey;
   label: string;
   gazeDwellMs: number;
+  /** Monotonic seed used to cycle all 16 thin black-on-white kinetic line-art morphs. */
+  variantSeed?: number;
 }
 
 export interface SpiralPoint extends Point {

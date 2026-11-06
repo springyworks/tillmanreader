@@ -267,6 +267,21 @@ export class LayoutController {
           safeTop + m,
           Math.min(effectiveTargetBottom - m, this.app.target.y),
         );
+        if (this.overlapsGoalDock(this.app.target.x, this.app.target.y, this.app.target.r, arena)) {
+          const clearBelowY =
+            dock.cardRect.y + dock.cardRect.h + this.app.scoopVisor.offsetY + this.app.target.r + 8;
+          if (effectiveTargetBottom - m >= clearBelowY) {
+            this.app.target.y = clearBelowY;
+          } else {
+            this.app.target.x =
+              this.app.target.x < cx
+                ? Math.max(safeLeft + m, dock.cardRect.x - this.app.target.r - 14)
+                : Math.min(
+                    safeRight - m,
+                    dock.cardRect.x + dock.cardRect.w + this.app.target.r + 14,
+                  );
+          }
+        }
       }
     }
 

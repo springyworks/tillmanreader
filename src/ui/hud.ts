@@ -167,7 +167,9 @@ export class Hud {
       this.app.voiceEngine.playPreset('TSSJJ');
       this.app.reading.uiFontScale = 1.35;
       if (this.app.reading.stage > 1) this.app.reading.stage--;
-      this.app.spawner.spawnForCurrentLevel();
+      if (!this.app.scoopVisor.isDragging) {
+        this.app.spawner.spawnForCurrentLevel();
+      }
       this.showToast(
         '⚡ RAGE SCRIBBLE DETECTED',
         'Scaffolding down one reading stage & enlarging targets.',

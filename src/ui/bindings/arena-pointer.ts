@@ -104,7 +104,13 @@ function unlockOnFirstTouch(app: LabApp, e: PointerEvent): void {
     const heroAudioText = maybeById('heroAudioText');
     if (heroAudioText) heroAudioText.textContent = 'STEM: AAN';
     const who = app.tutor.vocative(true);
-    if (app.level === 7 && app.activeReadingItem) {
+    if (app.level === 2 && app.tutor.baselineHitsRemaining > 0) {
+      app.voiceEngine.speakDutchTutor(
+        `Hoi ${who}! Pak het blauwe handvat bovenaan en sleep naar het groene rondje, dan kijken we hoe fijn het op dit scherm gaat!`,
+        null,
+        'JOYFUL_SPARK',
+      );
+    } else if (app.level === 7 && app.activeReadingItem) {
       const nextQ = app.tutor.pickNextTargetPrompt(app.activeReadingItem.target);
       app.voiceEngine.speakDutchTutor(
         `Hoi ${who}! Pak het blauwe handvat bovenaan en sleep rustig.`,
@@ -201,6 +207,7 @@ function grabScoopVisor(app: LabApp, e: PointerEvent, now: number): void {
   }
 
   strayTapCount = 0;
+  app.gesture.samples = [];
   sv.isDragging = true;
   sv.pointerId = e.pointerId;
   sv.dragStartTime = now;

@@ -1,4 +1,4 @@
-/** Vector illustration a correct answer morphs into; the keys the SemanticMorphEngine draws. */
+/** Vector ink-line miniature a correct answer morphs into; drawn by `SemanticMorphEngine`. */
 export type SemanticMorphKey =
   | 'BALL'
   | 'SUN'
@@ -10,7 +10,15 @@ export type SemanticMorphKey =
   | 'FISH'
   | 'RABBIT'
   | 'TREEHOUSE'
-  | 'PLANE';
+  | 'PLANE'
+  | 'VELO'
+  | 'BOAT'
+  | 'TRAIN'
+  | 'OWL'
+  | 'DOG'
+  | 'MILL'
+  | 'SNAIL'
+  | 'ROCKET';
 
 /** One prompt of a reading stage: the grapheme or word to find among its distractors. */
 export interface ReadingItem {
@@ -64,28 +72,28 @@ export class AdaptiveReadingEngine {
     this.stages = [
       {
         id: 1,
-        name: 'Stage 1: Pre-Attentive Pop-Out',
-        desc: 'Distinct graphemes (A, O, X, S, M, T) — builds fast visual-motor anchor.',
+        name: 'Stage 1: Losse Pop-Out Letters',
+        desc: 'Heldere beginletters (A, M, S, O, K, R, Z, E) — bouwt een zekere letter-ankerbasis.',
         items: [
           {
             target: 'A',
             cue: 'A (appel)',
             morph: 'BALL',
-            morphLabel: '★ A (appel)',
+            morphLabel: '✒️ A (appel)',
             distractors: ['O', 'X', 'T', 'S'],
           },
           {
             target: 'M',
             cue: 'M (maan)',
-            morph: 'BALL',
-            morphLabel: '★ M (maan)',
+            morph: 'OWL',
+            morphLabel: '🦉 M (maan)',
             distractors: ['O', 'A', 'X', 'I'],
           },
           {
             target: 'S',
-            cue: 'S (ster)',
-            morph: 'BALL',
-            morphLabel: '★ S (ster)',
+            cue: 'S (slak)',
+            morph: 'SNAIL',
+            morphLabel: '🐌 S (slak)',
             distractors: ['X', 'O', 'T', 'A'],
           },
           {
@@ -95,30 +103,51 @@ export class AdaptiveReadingEngine {
             morphLabel: '☀️ O (zon)',
             distractors: ['X', 'T', 'I', 'M'],
           },
+          {
+            target: 'K',
+            cue: 'K (kat)',
+            morph: 'CAT',
+            morphLabel: '🐱 K (kat)',
+            distractors: ['O', 'S', 'M', 'E'],
+          },
+          {
+            target: 'R',
+            cue: 'R (raket)',
+            morph: 'ROCKET',
+            morphLabel: '🚀 R (raket)',
+            distractors: ['O', 'I', 'S', 'T'],
+          },
+          {
+            target: 'Z',
+            cue: 'Z (zeilboot)',
+            morph: 'BOAT',
+            morphLabel: '⛵ Z (zeil)',
+            distractors: ['O', 'M', 'A', 'U'],
+          },
         ],
       },
       {
         id: 2,
-        name: 'Stage 2: Mirror-Letter b/d/p/q',
-        desc: 'Tests left-right dorsal stream symmetry breaking & mirror inhibition.',
+        name: 'Stage 2: Spiegel- & Vormletters',
+        desc: 'Onderscheid tussen spiegelletters (b/d/p/q en n/u/v/w) met rustige oriëntatie.',
         items: [
           {
             target: 'b',
-            cue: 'b (buh-boing!)',
-            morph: 'FOREST',
-            morphLabel: '🅱️ b (buh-boing!)',
+            cue: 'b (bootje)',
+            morph: 'BOAT',
+            morphLabel: '⛵ b (buh-boing!)',
             distractors: ['d', 'p', 'q', 'h'],
           },
           {
             target: 'd',
-            cue: 'd (duh-deng!)',
-            morph: 'HOUSE',
-            morphLabel: '🐦 d (duh-deng!)',
+            cue: 'd (dier)',
+            morph: 'DOG',
+            morphLabel: '🐶 d (duh-deng!)',
             distractors: ['b', 'q', 'p', 'g'],
           },
           {
             target: 'p',
-            cue: 'p (puh-POP!)',
+            cue: 'p (plop!)',
             morph: 'CAT',
             morphLabel: '🍾 p (puh-POP!)',
             distractors: ['q', 'b', 'd', 'n'],
@@ -126,17 +155,73 @@ export class AdaptiveReadingEngine {
           {
             target: 'q',
             cue: 'q (kjiuueehh!)',
-            morph: 'BALL',
-            morphLabel: '🤪 q (kjiuueehh!)',
+            morph: 'VELO',
+            morphLabel: '🚲 q (kjiuueehh!)',
             distractors: ['p', 'd', 'b', 'u'],
+          },
+          {
+            target: 'n',
+            cue: 'n (noot)',
+            morph: 'SNAIL',
+            morphLabel: '🎵 n (noot)',
+            distractors: ['u', 'm', 'h', 'r'],
+          },
+          {
+            target: 'u',
+            cue: 'u (uil)',
+            morph: 'OWL',
+            morphLabel: '🦉 u (uil)',
+            distractors: ['n', 'o', 'v', 'a'],
           },
         ],
       },
       {
         id: 3,
-        name: 'Stage 3: Vowel Digraphs (klanken)',
-        desc: 'Two-letter phoneme units (aa, oe, ui, ij, eu, ie) — measures unitization.',
+        name: 'Stage 3: Twee-Letter Woordjes & Klanken',
+        desc: 'Eerste echte 2-letterwoordjes (ik, op, in, is, nu, zo, al) & tweetekenklanken (ui, oe, ij, eu).',
         items: [
+          {
+            target: 'ik',
+            cue: 'ik (ikke!)',
+            morph: 'VELO',
+            morphLabel: '🚲 ik!',
+            distractors: ['in', 'is', 'ok', 'al'],
+          },
+          {
+            target: 'op',
+            cue: 'op (bovenop)',
+            morph: 'RABBIT',
+            morphLabel: '🎩 op!',
+            distractors: ['in', 'om', 'os', 'ap'],
+          },
+          {
+            target: 'in',
+            cue: 'in (erin)',
+            morph: 'HOUSE',
+            morphLabel: '🏠 in!',
+            distractors: ['op', 'ik', 'is', 'an'],
+          },
+          {
+            target: 'is',
+            cue: 'is (dat is!)',
+            morph: 'SUN',
+            morphLabel: '☀️ is!',
+            distractors: ['ik', 'in', 'os', 'as'],
+          },
+          {
+            target: 'nu',
+            cue: 'nu (meteen)',
+            morph: 'TRAIN',
+            morphLabel: '🚂 nu!',
+            distractors: ['na', 'in', 'zo', 'ja'],
+          },
+          {
+            target: 'zo',
+            cue: 'zo (goed zo!)',
+            morph: 'MILL',
+            morphLabel: '🌷 zo!',
+            distractors: ['nu', 'os', 'ja', 'op'],
+          },
           {
             target: 'ui',
             cue: 'ui (huis)',
@@ -169,8 +254,8 @@ export class AdaptiveReadingEngine {
       },
       {
         id: 4,
-        name: 'Stage 4: CVC Core Words (MKM)',
-        desc: 'Whole-word orthographic decoding vs orthographic neighbors.',
+        name: 'Stage 4: Korte MKM Woordjes',
+        desc: 'Klankzuivere korte woordjes tussen orthografische buren (let op de beginletter!).',
         items: [
           {
             target: 'bos',
@@ -200,12 +285,33 @@ export class AdaptiveReadingEngine {
             morphLabel: '🐟 vis!',
             distractors: ['mis', 'sis', 'vos', 'pit'],
           },
+          {
+            target: 'hond',
+            cue: 'hond (woef!)',
+            morph: 'DOG',
+            morphLabel: '🐶 hond!',
+            distractors: ['mond', 'rond', 'hand', 'bont'],
+          },
+          {
+            target: 'boot',
+            cue: 'boot (op zee)',
+            morph: 'BOAT',
+            morphLabel: '⛵ boot!',
+            distractors: ['noot', 'poot', 'boom', 'rood'],
+          },
+          {
+            target: 'trein',
+            cue: 'trein (tsjoek!)',
+            morph: 'TRAIN',
+            morphLabel: '🚂 trein!',
+            distractors: ['plein', 'klein', 'brein', 'tak'],
+          },
         ],
       },
       {
         id: 5,
-        name: 'Stage 5: Two-Syllable Words',
-        desc: 'Syllable boundary chunking & morphological recognition.',
+        name: 'Stage 5: Twee Lettergrepen',
+        desc: 'Woordstukjes samenvoegen tot langere samenstellingen.',
         items: [
           {
             target: 'ko-nijn',
@@ -228,17 +334,31 @@ export class AdaptiveReadingEngine {
             morphLabel: '✈️ vliegtuig!',
             distractors: ['voet-bal', 'vuur-werk', 'zeil-boot', 'speel-goed'],
           },
+          {
+            target: 'wind-molen',
+            cue: 'windmolen (draait)',
+            morph: 'MILL',
+            morphLabel: '🌷 molen!',
+            distractors: ['zeil-boot', 'boom-hut', 'water-val', 'fiets-bel'],
+          },
+          {
+            target: 'zeil-boot',
+            cue: 'zeilboot (op het meer)',
+            morph: 'BOAT',
+            morphLabel: '⛵ zeilboot!',
+            distractors: ['boom-hut', 'vlieg-tuig', 'stoom-trein', 'bak-fiets'],
+          },
         ],
       },
       {
         id: 6,
-        name: 'Stage 6: Micro-Cloze Comprehension',
-        desc: 'Semantic prediction & contextual reading fluency.',
+        name: 'Stage 6: Zinnetjes & Begrip',
+        desc: 'Kies het woord dat het verhaaltje kloppend maakt.',
         items: [
           {
             target: 'blaft',
-            cue: 'De hond ___ hard.',
-            morph: 'HOUSE',
+            cue: 'De hond ___ vrolijk.',
+            morph: 'DOG',
             morphLabel: '🐶 blaft!',
             distractors: ['miauw', 'vliegt', 'zwemt', 'leest'],
           },
@@ -251,10 +371,17 @@ export class AdaptiveReadingEngine {
           },
           {
             target: 'rond',
-            cue: 'De voetbal rolt want hij is ___.',
-            morph: 'SUN',
-            morphLabel: '⚽ rond!',
+            cue: 'Het wiel rolt want het is ___.',
+            morph: 'VELO',
+            morphLabel: '🚲 rond!',
             distractors: ['vierkant', 'zwaar', 'blauw', 'koud'],
+          },
+          {
+            target: 'vaart',
+            cue: 'De boot ___ op het water.',
+            morph: 'BOAT',
+            morphLabel: '⛵ vaart!',
+            distractors: ['fietst', 'slaapt', 'blaft', 'bakt'],
           },
         ],
       },

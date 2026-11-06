@@ -5,6 +5,7 @@ import { TimeStampUtil } from '../util/timestamp';
 /** Categories of decisions emitted by the built-in Embedded Tutor onto the live ticker stream. */
 export type TutorTickerKind =
   | 'WELCOME'
+  | 'BASELINE_CHECK'
   | 'STEADY_HOLD'
   | 'FADE_THROTTLE'
   | 'THROTTLE_BACK'
@@ -12,6 +13,7 @@ export type TutorTickerKind =
   | 'VOICE_ENCOURAGE'
   | 'STEP_BACK'
   | 'STEP_RETURN'
+  | 'FIRST_LETTER_SCAFFOLD'
   | 'PROMOTE'
   | 'GIMBAL_ASSIST';
 
@@ -28,6 +30,13 @@ export interface TutorTickerItem {
   readonly metricsTag: string;
 }
 
+/** Multi-dimensional reading trial configuration scheduled by the Embedded Tutor. */
+export interface ReadingVariationPlan {
+  readonly distractorCount: number;
+  readonly targetCount: 1 | 2;
+  readonly politeFirstLetterScaffold: boolean;
+}
+
 /** Snapshot of the Embedded Tutor's live throttling state for HUD, JSON export and Human-Tutor feedback. */
 export interface TutorStatusSnapshot {
   readonly enabled: boolean;
@@ -38,6 +47,10 @@ export interface TutorStatusSnapshot {
   readonly fadeHoldMs: number;
   readonly fadeDurationMs: number;
   readonly fadeUnlocked: boolean;
+  readonly baselineHitsRemaining: number;
+  readonly activeDistractorCount: number;
+  readonly activeTargetCount: 1 | 2;
+  readonly politeFirstLetterScaffold: boolean;
   readonly temporaryStepBackTargetStage: number | null;
   readonly temporaryWarmupHitsRemaining: number;
   readonly steeringComfortPct: number;
@@ -155,16 +168,52 @@ const STEP_RETURN_LINES: readonly string[] = [
   'Kijk eens hoe goed dat ging{, WHO}! We pakken het weer op bij terug naar stap {STAGE}.',
 ];
 
+const POLITE_FIRST_LETTER_LINES: readonly string[] = [
+  'We proberen stap {STAGE} nu extra vriendelijk{, WHO}! Zie je de eerste letter {FIRST} van alle woordjes oplichten? Net als bij de losse letters zoeken we {TARGET}!',
+  'Heerlijk opgewarmd{, WHO}! Kijk naar het gouden streepje onder de eerste letter {FIRST} van elk woordje — zie jij welk woordje met {FIRST} begint voor {TARGET}?',
+  'Terug naar stap {STAGE}, maar nu extra rustig{, WHO}: zie je de beginletter {FIRST} van alle woordjes? Die ken je al van de losse letters — vang {TARGET} maar!',
+];
+
+const BASELINE_WELCOME_LINES: readonly string[] = [
+  'Hoi {WHO}! We beginnen met drie groene Tillmann-rondjes om te voelen hoe fijn het op dit scherm dingen doen gaat.',
+  'Welkom {WHO}! Pak het blauwe handvat bovenaan en vang eerst drie groene rondjes als rustige scherm-check.',
+  'Gezellig dat je er bent, {WHO}! Eerst drie gewone rondjes vangen zodat we weten hoe soepel jouw vinger over dit scherm glijdt.',
+];
+
+const BASELINE_PERIODIC_START_LINES: readonly string[] = [
+  'Even tussendoor twee gewone rondjes vangen{, WHO}, om te kijken hoe lekker ontspannen het op het scherm dingen doen gaat!',
+  'Kom{, WHO}, we doen heel even twee groene scherm-rondjes tussendoor — kijken hoe soepel je over het scherm stuurt!',
+  'Korte tussenstop met twee groene rondjes{, WHO}, zo meten we hoe fijn en rustig het bewegen op het scherm nu gaat!',
+];
+
+const BASELINE_INITIAL_COMPLETE_LINES: readonly string[] = [
+  'Super{, WHO}! Kijk eens hoe goed het op het scherm dingen doen al gaat! Nu gaan we vrolijk letters en woordjes vangen.',
+  'Wauw{, WHO}, wat stuur jij soepel over het scherm! De basis staat als een huis — op naar de letters!',
+  'Helemaal top{, WHO}! Het mikken op dit scherm gaat hartstikke fijn. Laten we nu lekker woordjes en letters zoeken!',
+];
+
+const BASELINE_PERIODIC_COMPLETE_LINES: readonly string[] = [
+  'Prachtig{, WHO}, wat gaat het op het scherm dingen doen lekker vast en ontspannen! We gaan weer vrolijk verder met lezen.',
+  'Zie je hoe soepel je over het scherm beweegt{, WHO}? Helemaal super — hup, weer terug naar onze woordjes!',
+  'Kijk dat eens{, WHO}: het mikken op het scherm gaat nog steeds als een zonnetje! We pakken onze woordjes weer op.',
+];
+
+const DUAL_TARGET_PROMPTS: readonly string[] = [
+  'Dubbel feest: er staan nu twee bolletjes met {NEXT} — vang ze allebei!',
+  'Kijk goed, er zijn nu twee doelen met {NEXT}! Pak eerst de ene en dan de tweede.',
+  'Twee keer prijs! Zoek allebei de bolletjes met {NEXT}!',
+];
+
+const DUAL_FIRST_HIT_LINES: readonly string[] = [
+  'Dat is één! Kun je nu ook de tweede {TARGET} vangen?',
+  'Mooi, de eerste {TARGET} is binnen! Pak nu ook de andere {TARGET}!',
+  'Eentje te pakken! Waar staat de tweede {TARGET}?',
+];
+
 const GIMBAL_ASSIST_LINES: readonly string[] = [
   'Bijna op het rondje{, WHO}! Zet het bovenste kijkertje midden op de letter en laat dán pas los.',
   'Rustig mikken: schuif het bovenste vizier precies op het rondje voordat je je vinger optilt.',
   'Ik maak de letters ietsje groter voor je{, WHO} — leg het bovenste rondje er maar bovenop!',
-];
-
-const WELCOME_LINES: readonly string[] = [
-  'Hoi {WHO}! Pak het blauwe handvat bij het doel bovenaan en sleep rustig naar dezelfde letter.',
-  'Welkom {WHO}! Sleep het kijkertje vanaf het vakje bovenin rustig naar de goede letter.',
-  'Gezellig dat je er bent, {WHO}! Pak het blauwe handvat bovenaan en zoek dezelfde letter.',
 ];
 
 const NEXT_PROMPT_LINES: readonly string[] = [
@@ -178,11 +227,12 @@ const NEXT_PROMPT_LINES: readonly string[] = [
 ];
 
 /**
- * Child-centred Embedded Tutor with Anti-Repetition Phrase Decks & Voice Emotion Steering:
- * - Throttles goal-memory fading gently (never unlocks after 1 hit; respects normal 5–10s child drag pacing).
- * - Throttles reading stage progression and temporary 1-stage confidence warm-ups ("even een stapje terug").
- * - Varies Dutch phrasing, omits vocatives on ~65% of ordinary lines so speech feels genuinely human,
- *   rotates affectionate Dutch terms without repeats, and pairs every reaction with a `VoiceEmotionId`.
+ * Child-centred Embedded Tutor with Tillmann Screen Baseline, Multi-Dimensional Variations & Voice Emotion:
+ * - Launches on Level 2 (Tillmann Hit-Test) for a 3-circle motor baseline and periodically steps back
+ *   for a 2-circle screen checkup with warm Dutch voice explanation (*"hoe goed het gaat met op het scherm dingen doen"*).
+ * - Varies distraction (`2..4` distractors) and target multiplicity (`1` vs `2` targets).
+ * - Steps back for 2 confident warm-up hits after 2 misses, then retries the harder stage politely with a
+ *   First-Letter visual spotlight + Dutch voice bridge back to single letters.
  */
 export class EmbeddedTutorEngine {
   enabled = true;
@@ -192,15 +242,34 @@ export class EmbeddedTutorEngine {
   consecutiveMisses = 0;
   emptyDropStreak = 0;
   steeringComfortPct = 88;
+
+  /** Tillmann Level 2 baseline reference & periodic motor checkup counters. */
+  baselineHitsRemaining = 3;
+  baselineTotalQuota = 3;
+  isPeriodicBaselineCheck = false;
+  readingHitsSinceBaseline = 0;
+  baselineMeanMtMs = 1150;
+  baselineMeanNormErr = 0.32;
+
+  /** Controlled step-back & polite first-letter retry state. */
   temporaryStepBackTargetStage: number | null = null;
   temporaryWarmupHitsRemaining = 0;
-  lastDecision = 'Rustige start: doel blijft volledig zichtbaar tot de basis zeker voelt.';
+  politeRetryPending = false;
+  politeScaffoldTrialsLeft = 0;
+  activeVariation: ReadingVariationPlan = {
+    distractorCount: 3,
+    targetCount: 1,
+    politeFirstLetterScaffold: false,
+  };
+
+  lastDecision = 'Tillmann scherm-basismeting actief (3 groene rondjes) vóór het lezen.';
   lastDutchSpeech = '';
   lastVoiceEmotion: VoiceEmotionId = 'WARM_ENCOURAGE';
 
   private seqCounter = 0;
   private lastSpokenPraiseTrial = -3;
   private trialCounter = 0;
+  private variationCounter = 0;
   private spokenUtteranceCounter = 0;
   private readonly poolCursors = new Map<readonly string[], number>();
   private readonly recentTemplates: string[] = [];
@@ -215,9 +284,8 @@ export class EmbeddedTutorEngine {
 
   /**
    * Returns a warm, non-repeating Dutch vocative:
-   * - If a custom grandchild nickname is set (e.g. `"Sem"`), uses `"Sem"` on milestones and mixes in
-   *   affectionate Dutch pet names (`"kanjer"`, `"speurneus"`, `"toppertje"`) on casual moments.
-   * - If generic (`"Beste leerling"`), rotates across warm Dutch child-friendly expressions without repeats.
+   * - Custom grandchild nickname (e.g. `"Sem"`) is used on milestones and mixed with affectionate Dutch pet names.
+   * - Generic `"Beste leerling"` rotates across warm child-friendly expressions without robotic repeats.
    */
   vocative(preferRealName = false): string {
     if (!this.isGenericLearner()) {
@@ -229,12 +297,23 @@ export class EmbeddedTutorEngine {
     return this.pickDistinct(GENERIC_VOCATIVES, this.recentVocatives, 5);
   }
 
-  /** Picks a varied, natural Dutch follow-up question for the next reading target (never `"Zoek nu"` every time). */
+  /** Picks a varied, natural Dutch follow-up question for the next reading target (supporting 2x Dual-Target). */
   pickNextTargetPrompt(nextTarget: string | null | undefined): string | null {
     const clean = (nextTarget || '').replace('-', '').trim();
     if (!clean) return null;
+    if (this.activeVariation.targetCount === 2) {
+      const dualTpl = this.pickDistinct(DUAL_TARGET_PROMPTS, this.recentPrompts, 2);
+      return dualTpl.replace(/\{NEXT\}/g, clean);
+    }
     const tpl = this.pickDistinct(NEXT_PROMPT_LINES, this.recentPrompts, 4);
     return tpl.replace(/\{NEXT\}/g, clean);
+  }
+
+  /** Encourages catching the second matching bubble during a Dual-Target (`targetCount === 2`) trial. */
+  buildDualTargetFirstHitSpeech(targetText: string): string {
+    const clean = targetText.replace('-', '').trim();
+    const tpl = this.pickDistinct(DUAL_FIRST_HIT_LINES, this.recentPrompts, 2);
+    return tpl.replace(/\{TARGET\}/g, clean);
   }
 
   resetForLearner(nickname: string): void {
@@ -244,17 +323,246 @@ export class EmbeddedTutorEngine {
     this.consecutiveMisses = 0;
     this.emptyDropStreak = 0;
     this.steeringComfortPct = 88;
+    this.baselineHitsRemaining = 3;
+    this.baselineTotalQuota = 3;
+    this.isPeriodicBaselineCheck = false;
+    this.readingHitsSinceBaseline = 0;
     this.temporaryStepBackTargetStage = null;
     this.temporaryWarmupHitsRemaining = 0;
+    this.politeRetryPending = false;
+    this.politeScaffoldTrialsLeft = 0;
+    this.activeVariation = {
+      distractorCount: 2,
+      targetCount: 1,
+      politeFirstLetterScaffold: false,
+    };
     this.trialCounter = 0;
+    this.variationCounter = 0;
     this.lastSpokenPraiseTrial = -3;
     const who = this.isGenericLearner()
       ? this.pickDistinct(GENERIC_VOCATIVES, this.recentVocatives, 4)
       : this.learnerName.trim();
-    const tpl = this.pickDistinct(WELCOME_LINES, this.recentTemplates, 2);
+    const tpl = this.pickDistinct(BASELINE_WELCOME_LINES, this.recentTemplates, 2);
     const speech = tpl.replace(/\{WHO\}/g, who);
-    this.lastDecision = `Profiel actief (${this.learnerName}) — rustige start zonder vervagen.`;
-    this.pushTicker('WELCOME', 'Start', this.lastDecision, speech, 'JOYFUL_SPARK', 'fade=STEADY');
+    this.lastDecision = `Profiel actief (${this.learnerName}) — start met 3 Tillmann scherm-rondjes als basisreferentie.`;
+    this.pushTicker(
+      'WELCOME',
+      'L2-Basis',
+      this.lastDecision,
+      speech,
+      'JOYFUL_SPARK',
+      'baseline=0/3 • fade=STEADY',
+    );
+  }
+
+  /** Arms either the initial 3-hit URL-open baseline or a periodic 2-hit screen checkup on Level 2. */
+  startBaselineSession(
+    quota = 3,
+    isPeriodic = false,
+  ): { dutchSpeech: string; voiceEmotion: VoiceEmotionId } {
+    this.baselineTotalQuota = Math.max(1, quota);
+    this.baselineHitsRemaining = this.baselineTotalQuota;
+    this.isPeriodicBaselineCheck = isPeriodic;
+
+    if (isPeriodic) {
+      const speech = this.renderLine(BASELINE_PERIODIC_START_LINES, {
+        forceVocative: true,
+        preferRealName: !this.isGenericLearner(),
+      });
+      this.lastDecision = `Periodieke Tillmann scherm-check (${quota} rondjes) — kijken hoe ontspannen het sturen op het scherm gaat.`;
+      this.pushTicker(
+        'BASELINE_CHECK',
+        'L2-Check',
+        this.lastDecision,
+        speech,
+        'CURIOUS_WONDER',
+        `quota=${quota}`,
+      );
+      return { dutchSpeech: speech, voiceEmotion: 'CURIOUS_WONDER' };
+    }
+
+    const who = this.vocative(true);
+    const tpl = this.pickDistinct(BASELINE_WELCOME_LINES, this.recentTemplates, 2);
+    const speech = tpl.replace(/\{WHO\}/g, who);
+    return { dutchSpeech: speech, voiceEmotion: 'JOYFUL_SPARK' };
+  }
+
+  /** Records a Level 2 Tillmann pointing hit and announces warm Dutch screen-skill feedback on completion. */
+  recordBaselineHit(
+    mtMs: number,
+    normRadiusPct: number,
+  ): {
+    completed: boolean;
+    hitsDone: number;
+    totalQuota: number;
+    dutchSpeech: string | null;
+    voiceEmotion: VoiceEmotionId;
+  } {
+    this.emptyDropStreak = 0;
+    this.baselineMeanMtMs = Math.round(this.baselineMeanMtMs * 0.7 + mtMs * 0.3);
+    this.baselineMeanNormErr = Number(
+      (this.baselineMeanNormErr * 0.7 + normRadiusPct * 0.3).toFixed(3),
+    );
+    this.steeringComfortPct = Math.min(
+      99,
+      Math.round(this.steeringComfortPct * 0.8 + (normRadiusPct < 0.55 ? 96 : 84) * 0.2),
+    );
+
+    if (this.baselineHitsRemaining > 0) {
+      this.baselineHitsRemaining--;
+    }
+    const hitsDone = this.baselineTotalQuota - this.baselineHitsRemaining;
+
+    if (this.baselineHitsRemaining <= 0) {
+      const wasPeriodic = this.isPeriodicBaselineCheck;
+      this.isPeriodicBaselineCheck = false;
+      this.readingHitsSinceBaseline = 0;
+      const pool = wasPeriodic ? BASELINE_PERIODIC_COMPLETE_LINES : BASELINE_INITIAL_COMPLETE_LINES;
+      const speech = this.renderLine(pool, {
+        forceVocative: true,
+        preferRealName: true,
+      });
+      this.lastDecision = wasPeriodic
+        ? `Scherm-check geslaagd (${hitsDone}/${this.baselineTotalQuota}, gem. ${this.baselineMeanMtMs}ms) — terug naar lezen!`
+        : `Tillmann basisreferentie vastgelegd (${hitsDone}/${this.baselineTotalQuota}, gem. ${this.baselineMeanMtMs}ms) — door naar lezen!`;
+      this.pushTicker(
+        'BASELINE_CHECK',
+        'L2→L7',
+        this.lastDecision,
+        speech,
+        'PROUD_CELEBRATE',
+        `MT=${Math.round(mtMs)}ms • r=${Math.round(normRadiusPct * 100)}%`,
+      );
+      return {
+        completed: true,
+        hitsDone,
+        totalQuota: this.baselineTotalQuota,
+        dutchSpeech: speech,
+        voiceEmotion: 'PROUD_CELEBRATE',
+      };
+    }
+
+    const rem = this.baselineHitsRemaining;
+    const interimSpeech =
+      hitsDone === 1 && this.baselineTotalQuota >= 3
+        ? `Mooi raak! Nog ${rem === 1 ? 'één groen rondje' : `${rem} groene rondjes`} voor onze scherm-check.`
+        : null;
+    this.lastDecision = `Tillmann basis-treffer ${hitsDone}/${this.baselineTotalQuota} (${Math.round(mtMs)}ms).`;
+    return {
+      completed: false,
+      hitsDone,
+      totalQuota: this.baselineTotalQuota,
+      dutchSpeech: interimSpeech,
+      voiceEmotion: 'JOYFUL_SPARK',
+    };
+  }
+
+  /** Triggers a brief 2-circle Level 2 baseline checkup every 8 reading hits so motor baseline stays fresh. */
+  shouldTriggerPeriodicBaselineCheck(): {
+    trigger: boolean;
+    dutchSpeech: string | null;
+    voiceEmotion: VoiceEmotionId;
+  } {
+    if (
+      !this.enabled ||
+      this.temporaryStepBackTargetStage !== null ||
+      this.politeScaffoldTrialsLeft > 0 ||
+      this.readingHitsSinceBaseline < 8
+    ) {
+      return { trigger: false, dutchSpeech: null, voiceEmotion: 'WARM_ENCOURAGE' };
+    }
+    this.readingHitsSinceBaseline = 0;
+    const started = this.startBaselineSession(2, true);
+    return {
+      trigger: true,
+      dutchSpeech: started.dutchSpeech,
+      voiceEmotion: started.voiceEmotion,
+    };
+  }
+
+  /**
+   * Schedules multi-dimensional reading trial parameters:
+   * - Polite re-try after a 2-hit step-back: `distractorCount = 2`, `targetCount = 1`, and
+   *   `politeFirstLetterScaffold = true` on 2+ letter items so the 1st letter lights up visually!
+   * - Confident flow: scales distractors (`2 -> 3 -> 4`) and introduces Dual-Target (`targetCount = 2`) trials.
+   */
+  planNextReadingVariation(readingStage: number, targetText: string): ReadingVariationPlan {
+    this.variationCounter++;
+    const cleanLen = targetText.replace('-', '').trim().length;
+
+    if (!this.enabled) {
+      this.activeVariation = {
+        distractorCount: 3,
+        targetCount: 1,
+        politeFirstLetterScaffold: false,
+      };
+      return this.activeVariation;
+    }
+
+    if (this.politeScaffoldTrialsLeft > 0) {
+      this.politeScaffoldTrialsLeft--;
+      this.activeVariation = {
+        distractorCount: 2,
+        targetCount: 1,
+        politeFirstLetterScaffold: cleanLen >= 2,
+      };
+      return this.activeVariation;
+    }
+
+    if (this.temporaryStepBackTargetStage !== null) {
+      this.activeVariation = {
+        distractorCount: 2,
+        targetCount: 1,
+        politeFirstLetterScaffold: false,
+      };
+      return this.activeVariation;
+    }
+
+    const distractorCount = this.stageHitStreak === 0 ? 2 : this.stageHitStreak <= 2 ? 3 : 4;
+    const useDualTargets =
+      this.consecutiveMisses === 0 &&
+      this.stageHitStreak >= 2 &&
+      readingStage >= 1 &&
+      this.variationCounter % 3 === 0;
+
+    this.activeVariation = {
+      distractorCount: useDualTargets ? Math.min(3, distractorCount) : distractorCount,
+      targetCount: useDualTargets ? 2 : 1,
+      politeFirstLetterScaffold: false,
+    };
+    return this.activeVariation;
+  }
+
+  /**
+   * Builds a warm, explicit Dutch coaching line when returning from a 2-hit step-back into a polite
+   * re-try, pointing out the highlighted first letter of every word and linking it to single letters.
+   */
+  buildPoliteFirstLetterSpeech(
+    nextTargetText: string | null | undefined,
+    stage: number,
+  ): string | null {
+    const clean = (nextTargetText ?? '').replace('-', '').trim();
+    if (clean.length < 2) return null;
+    const first = clean.charAt(0);
+    const tpl = this.pickDistinct(POLITE_FIRST_LETTER_LINES, this.recentTemplates, 2);
+    const useVocative = true;
+    const whoSegment = useVocative ? `, ${this.vocative(true)}` : '';
+    const line = tpl
+      .replace(/\{, WHO\}/g, whoSegment)
+      .replace(/\{STAGE\}/g, String(stage))
+      .replace(/\{FIRST\}/g, first)
+      .replace(/\{TARGET\}/g, clean);
+
+    this.lastDecision = `Vriendelijke herstart op stap ${stage}/6 — eerste letter "${first}" oplichtend op alle woordjes ("${clean}").`;
+    this.pushTicker(
+      'FIRST_LETTER_SCAFFOLD',
+      `S${stage}`,
+      this.lastDecision,
+      line,
+      'CURIOUS_WONDER',
+      `1e-letter="${first}" • distract=2`,
+    );
+    return line;
   }
 
   /** Required unfaded calm hits before AUTO_PROG unlocks gentle goal fading. */
@@ -389,6 +697,9 @@ export class EmbeddedTutorEngine {
     if (input.hit) {
       this.consecutiveMisses = 0;
       this.stageHitStreak++;
+      if (this.temporaryStepBackTargetStage === null) {
+        this.readingHitsSinceBaseline++;
+      }
       this.steeringComfortPct = Math.min(
         99,
         Math.round(this.steeringComfortPct * 0.85 + (input.radialNormPct < 0.55 ? 96 : 82) * 0.15),
@@ -425,6 +736,10 @@ export class EmbeddedTutorEngine {
         if (this.temporaryWarmupHitsRemaining <= 0) {
           nextStage = this.temporaryStepBackTargetStage;
           this.temporaryStepBackTargetStage = null;
+          if (this.politeRetryPending) {
+            this.politeRetryPending = false;
+            this.politeScaffoldTrialsLeft = 2;
+          }
           this.stageHitStreak = 0;
           this.calmStreak = 1;
           stageChanged = 'RETURNED_UP';
@@ -435,7 +750,7 @@ export class EmbeddedTutorEngine {
             forceVocative: true,
             preferRealName: true,
           });
-          this.lastDecision = `Warm-up geslaagd — terug naar leesstap ${nextStage}/6 met rustig vast doel.`;
+          this.lastDecision = `2 opwarm-treffers geslaagd — vriendelijke herstart op leesstap ${nextStage}/6 met eerste-letter hulp.`;
           this.lastSpokenPraiseTrial = this.trialCounter;
         }
       } else if (
@@ -497,6 +812,7 @@ export class EmbeddedTutorEngine {
       if (autoZPD && this.enabled && this.consecutiveMisses >= 2 && input.readingStage > 1) {
         this.temporaryStepBackTargetStage = input.readingStage;
         this.temporaryWarmupHitsRemaining = 2;
+        this.politeRetryPending = true;
         nextStage = input.readingStage - 1;
         this.consecutiveMisses = 0;
         recommendedFontScale = Math.min(1.4, Number((currentFontScale + 0.08).toFixed(2)));
@@ -507,9 +823,13 @@ export class EmbeddedTutorEngine {
           forceVocative: true,
           preferRealName: true,
         });
-        this.lastDecision = `2 missers op rij — tijdelijk stapje terug (${input.readingStage}→${nextStage}) voor 2 succes-treffers + groter doel.`;
+        this.lastDecision = `2 missers op rij — tijdelijk stapje terug (${input.readingStage}→${nextStage}) voor 2 succes-treffers, daarna vriendelijke herstart met eerste-letter hulp.`;
         this.lastSpokenPraiseTrial = this.trialCounter;
       } else {
+        if (this.enabled && this.consecutiveMisses >= 2 && input.readingStage === 1) {
+          this.politeScaffoldTrialsLeft = 2;
+          recommendedFontScale = Math.min(1.4, Number((currentFontScale + 0.08).toFixed(2)));
+        }
         kind = 'VOICE_ENCOURAGE';
         dutchCoachLine = this.renderLine(MISS_ENCOURAGE_LINES, {
           target: cleanTarget,
@@ -583,6 +903,10 @@ export class EmbeddedTutorEngine {
       fadeHoldMs: sched.initialShowMs,
       fadeDurationMs: sched.fadeDurationMs,
       fadeUnlocked: sched.calmFadeUnlocked,
+      baselineHitsRemaining: this.baselineHitsRemaining,
+      activeDistractorCount: this.activeVariation.distractorCount,
+      activeTargetCount: this.activeVariation.targetCount,
+      politeFirstLetterScaffold: this.activeVariation.politeFirstLetterScaffold,
       temporaryStepBackTargetStage: this.temporaryStepBackTargetStage,
       temporaryWarmupHitsRemaining: this.temporaryWarmupHitsRemaining,
       steeringComfortPct: this.steeringComfortPct,

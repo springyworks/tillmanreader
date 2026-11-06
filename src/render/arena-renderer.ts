@@ -99,9 +99,25 @@ export class ArenaRenderer {
     if (level === 1 && l1Mode === 'shrink') {
       return '🎯 DOEL: Sleep vanaf bovenaan naar de cirkel & laat los!';
     }
-    if (level === 2) return '🎯 DOEL: Sleep vanaf het doel-vak bovenaan naar het doelwit!';
+    if (level === 2) {
+      const rem = this.app.tutor.baselineHitsRemaining;
+      if (rem > 0) {
+        const total = Math.max(1, this.app.tutor.baselineTotalQuota);
+        const done = Math.max(0, total - rem);
+        return `🎯 SCHERM-BASIS (${done + 1}/${total}): Sleep vanaf bovenaan naar het groene rondje!`;
+      }
+      return '🎯 DOEL: Sleep vanaf het doel-vak bovenaan naar het doelwit!';
+    }
     if (level === 3) return '🎯 DOEL: Stuur door de spiraal-tunnel naar BOVENAAN!';
     if (level === 7 && activeReadingItem) {
+      const remTargets = this.app.readingTargets.filter((b) => b.isTarget).length;
+      if (remTargets >= 2) {
+        return `🎯 DUBBEL DOEL (2x): Vang allebei de bolletjes met "${activeReadingItem.target}"!`;
+      }
+      if (this.app.tutor.activeVariation.politeFirstLetterScaffold) {
+        const firstCh = activeReadingItem.target.replace('-', '').charAt(0);
+        return `🔎 1e LETTER "${firstCh}": Kijk naar het gele streepje & zoek "${activeReadingItem.target}"!`;
+      }
       return `🎯 ZOEK & SLEEP NAAR: "${activeReadingItem.target}" — ${activeReadingItem.cue}`;
     }
     return '🎯 DOEL: Tik zodra de cirkel GROEN wordt!';
@@ -156,7 +172,6 @@ export class ArenaRenderer {
       );
     }
 
-    // Live hold/fade countdown progress bar along the bottom edge of the banner
     if (gm.initialShowMs < 50000 && gm.revealAlpha > 0.02) {
       const totalWindow = gm.initialShowMs + gm.fadeDurationMs;
       const remRatio = Math.max(0, 1 - elapsedTrial / Math.max(1, totalWindow));
@@ -178,6 +193,9 @@ export class ArenaRenderer {
     const cr = dock.cardRect;
     this.lastGoalCenterRect = cr;
     const gm = this.app.goalMemory;
+    const rem = this.app.tutor.baselineHitsRemaining;
+    const total = Math.max(1, this.app.tutor.baselineTotalQuota);
+    const done = Math.max(0, total - rem);
 
     ctx.save();
     ctx.globalAlpha = Math.max(0.32, gm.revealAlpha);
@@ -192,7 +210,9 @@ export class ArenaRenderer {
     ctx.font = `bold 11px ${MONO}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🎯 START DOEL', dock.x, dock.y, cr.w - 12);
+    const txt =
+      this.app.level === 2 && rem > 0 ? `🎯 START (${done + 1}/${total})` : '🎯 START DOEL';
+    ctx.fillText(txt, dock.x, dock.y, cr.w - 12);
     ctx.restore();
   }
 
@@ -224,7 +244,7 @@ export class ArenaRenderer {
     ctx.font = `bold ${isMobile ? 10 : 11}px ${MONO}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🔊 TAP HERE FOR FUNNY VOICES ("kjiuueehh!" & jokes)', cx, pillY + pillH / 2);
+    ctx.fillText('🔊 TIK HIER VOOR STEM & BACH-RHODES GELUID!', cx, pillY + pillH / 2);
     ctx.restore();
   }
 
@@ -276,7 +296,6 @@ export class ArenaRenderer {
     }
     ctx.fill();
 
-    // Aim-strategy rings: bullseye core below 30% R versus speed rim-graze at 70-100% R
     if (telemetry.aimStrategy === 'BULLSEYE') {
       ctx.strokeStyle = '#fef08a';
       ctx.lineWidth = 2;
@@ -290,7 +309,6 @@ export class ArenaRenderer {
       ctx.arc(t.x, t.y, safeR * 0.85, 0, Math.PI * 2);
       ctx.stroke();
     } else {
-      // Subtle center dot so the user can tell the center from the periphery
       ctx.fillStyle = 'rgba(2, 6, 23, 0.35)';
       ctx.beginPath();
       ctx.arc(t.x, t.y, Math.max(2.5, safeR * 0.18), 0, Math.PI * 2);
@@ -301,10 +319,10 @@ export class ArenaRenderer {
     ctx.font = `bold ${Math.round(13 * fontScale)}px ${MONO}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(t.label, t.x, t.y - (t.subLabel ? 7 : 0));
+    ctx.fillText(t.label, t.x, t.y - (t.subLabel ? 7 : 0), safeR * 1.75);
     if (t.subLabel) {
-      ctx.font = `${Math.round(10 * fontScale)}px ${MONO}`;
-      ctx.fillText(t.subLabel, t.x, t.y + 10);
+      ctx.font = `${Math.round(9.5 * fontScale)}px ${MONO}`;
+      ctx.fillText(t.subLabel, t.x, t.y + 10, safeR * 1.75);
     }
     ctx.restore();
   }
@@ -347,7 +365,42 @@ export class ArenaRenderer {
     ctx.fillText('GOAL', e.x, e.y);
   }
 
-  /** 7. Level 7 reading arena: the Top Goal Center Launch Box and the non-overlapping target bubbles. */
+  /** Renders a word with a warm golden spotlight & underline bar beneath its 1st letter. */
+  private drawWordWithFirstLetterSpotlight(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    centerX: number,
+    centerY: number,
+    fontPx: number,
+    weight = 'bold',
+  ): void {
+    const first = text.charAt(0);
+    const rest = text.slice(1);
+    ctx.save();
+    ctx.font = `${weight} ${fontPx}px ${MONO}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+
+    const wFirst = ctx.measureText(first).width;
+    const wRest = ctx.measureText(rest).width;
+    const totalW = wFirst + wRest;
+    const startX = centerX - totalW / 2;
+
+    // Soft golden highlight pill + underline bar under character #1
+    ctx.fillStyle = 'rgba(250, 204, 21, 0.22)';
+    drawRoundRect(ctx, startX - 3, centerY - fontPx * 0.56, wFirst + 6, fontPx * 1.12, 5);
+    ctx.fill();
+
+    ctx.fillStyle = '#fde047';
+    ctx.fillRect(startX - 1, centerY + fontPx * 0.46, wFirst + 2, Math.max(2.5, fontPx * 0.11));
+    ctx.fillText(first, startX, centerY);
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillText(rest, startX + wFirst, centerY);
+    ctx.restore();
+  }
+
+  /** 7. Level 7 reading arena: Top Goal Center Launch Box, Dual-Target badge & First-Letter Spotlight. */
   private drawReadingArena(ctx: CanvasRenderingContext2D, arena: SafeArena): void {
     const item = this.app.activeReadingItem;
     if (this.app.level !== 7 || !item) return;
@@ -357,8 +410,11 @@ export class ArenaRenderer {
     const dock = this.app.layout.getGoalCenterDock(arena);
     const { x: cardX, y: cardY, w: cardW, h: cardH } = dock.cardRect;
     this.lastGoalCenterRect = dock.cardRect;
+    const showFirstLetter =
+      this.app.tutor.activeVariation.politeFirstLetterScaffold &&
+      item.target.replace('-', '').trim().length >= 2;
+    const remTargets = this.app.readingTargets.filter((b) => b.isTarget).length;
 
-    // Subtle persistent anchor frame when faded so the Goal Center dock is always recognizable
     if (gm.revealAlpha <= 0.12) {
       ctx.save();
       ctx.setLineDash([4, 4]);
@@ -378,7 +434,7 @@ export class ArenaRenderer {
       ctx.save();
       ctx.globalAlpha = gm.revealAlpha;
       ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
-      ctx.strokeStyle = '#10b981';
+      ctx.strokeStyle = showFirstLetter ? '#fde047' : '#10b981';
       ctx.lineWidth = 2.4;
       drawRoundRect(ctx, cardX, cardY, cardW, cardH, 12);
       ctx.fill();
@@ -387,15 +443,44 @@ export class ArenaRenderer {
       const promptFontPx = Math.round(
         (safeH < 270 ? 22 : isMobile ? 28 : 38) * Math.min(1.25, fontScale),
       );
-      ctx.fillStyle = '#ecfdf5';
-      ctx.font = `800 ${promptFontPx}px ${MONO}`;
+      if (showFirstLetter) {
+        this.drawWordWithFirstLetterSpotlight(
+          ctx,
+          item.target,
+          cx,
+          cardY + cardH * 0.43,
+          promptFontPx,
+          '800',
+        );
+      } else {
+        ctx.fillStyle = '#ecfdf5';
+        ctx.font = `800 ${promptFontPx}px ${MONO}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(item.target, cx, cardY + cardH * 0.43, cardW - 14);
+      }
+
+      if (remTargets >= 2) {
+        ctx.fillStyle = '#fbbf24';
+        drawRoundRect(ctx, cardX + cardW - 44, cardY + 5, 38, 16, 6);
+        ctx.fill();
+        ctx.fillStyle = '#020617';
+        ctx.font = `bold 10px ${MONO}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('2x!', cardX + cardW - 25, cardY + 13);
+      }
+
+      ctx.fillStyle = showFirstLetter ? '#fde047' : '#94a3b8';
+      ctx.font = `${Math.max(10, Math.round((safeH < 270 ? 9.5 : 11) * Math.min(1.2, fontScale)))}px ${MONO}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(item.target, cx, cardY + cardH * 0.43, cardW - 14);
-
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = `${Math.max(10, Math.round((safeH < 270 ? 9.5 : 11) * Math.min(1.2, fontScale)))}px ${MONO}`;
-      ctx.fillText(item.cue, cx, cardY + cardH * 0.83, cardW - 14);
+      ctx.fillText(
+        showFirstLetter ? `🔎 1e letter: "${item.target.charAt(0)}"` : item.cue,
+        cx,
+        cardY + cardH * 0.83,
+        cardW - 14,
+      );
       ctx.restore();
     }
 
@@ -404,23 +489,28 @@ export class ArenaRenderer {
       const isLocked = hovered !== null && hovered.obj === rt;
       ctx.save();
       ctx.fillStyle = isLocked ? 'rgba(6, 78, 59, 0.95)' : 'rgba(15, 23, 42, 0.94)';
-      ctx.strokeStyle = isLocked ? '#10b981' : '#475569';
+      ctx.strokeStyle = isLocked ? '#10b981' : showFirstLetter ? '#64748b' : '#475569';
       ctx.lineWidth = isLocked ? 3 : 2;
       ctx.beginPath();
       ctx.arc(rt.x, rt.y, Math.max(14, rt.r), 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = `bold ${Math.round((safeH < 270 ? 15 : 18) * fontScale)}px ${MONO}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(rt.text, rt.x, rt.y, rt.r * 1.85);
+      const bubbleFontPx = Math.round((safeH < 270 ? 15 : 18) * fontScale);
+      if (showFirstLetter && rt.text.replace('-', '').trim().length >= 2) {
+        this.drawWordWithFirstLetterSpotlight(ctx, rt.text, rt.x, rt.y, bubbleFontPx, 'bold');
+      } else {
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = `bold ${bubbleFontPx}px ${MONO}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(rt.text, rt.x, rt.y, rt.r * 1.85);
+      }
       ctx.restore();
     }
   }
 
-  /** 8. Celebratory circle-to-SVG morphs; also accumulates the 60 Hz gaze dwell near each (M097). */
+  /** 8. Celebratory thin black-on-white morphic cartoons; accumulates 60 Hz gaze dwell (M097). */
   private drawMorphs(ctx: CanvasRenderingContext2D, now: number): void {
     const morphs = this.app.activeMorphs;
     for (let i = morphs.length - 1; i >= 0; i--) {
@@ -431,7 +521,16 @@ export class ArenaRenderer {
         continue;
       }
       const prog = elapsed / m.durationMs;
-      SemanticMorphEngine.renderMorph(ctx, m.x, m.y, m.r, prog, m.semanticKey, m.label);
+      SemanticMorphEngine.renderMorph(
+        ctx,
+        m.x,
+        m.y,
+        m.r,
+        prog,
+        m.semanticKey,
+        m.label,
+        m.variantSeed ?? 0,
+      );
 
       const distToMorph = Math.hypot(this.app.cursor.x - m.x, this.app.cursor.y - m.y);
       if (distToMorph <= m.r * 1.75) {

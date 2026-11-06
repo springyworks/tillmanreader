@@ -23,6 +23,7 @@ export class TrialSpawner {
     this.app.decelOnsetTime = 0;
     this.app.currentTrialDockMs = 0;
     this.app.currentTrialGesture = null;
+    this.app.gesture.samples = [];
     this.app.goalMemory.trialPeekCount = 0;
     this.app.goalMemory.trialHoverMs = 0;
     this.app.goalMemory.isHoveringTopGoal = false;
@@ -89,7 +90,13 @@ export class TrialSpawner {
       }
     } else if (this.app.level === 2) {
       this.app.layout.resetScoopVisorPosition();
-      const r = Math.max(16, Math.round((18 + Math.random() * 26) * this.app.reading.uiFontScale));
+      const baseRem = this.app.tutor.baselineHitsRemaining;
+      const baseTotal = Math.max(1, this.app.tutor.baselineTotalQuota);
+      const baseDone = Math.max(0, baseTotal - baseRem);
+      const r =
+        baseRem > 0
+          ? Math.max(22, Math.round((22 + Math.random() * 16) * this.app.reading.uiFontScale))
+          : Math.max(16, Math.round((18 + Math.random() * 26) * this.app.reading.uiFontScale));
       const pos = this.pickNonOverlappingTargetPos(arena, playBottom, r);
       const startX = this.app.scoopVisor.visorX;
       const startY = this.app.scoopVisor.visorY;
@@ -100,7 +107,8 @@ export class TrialSpawner {
         y: pos.y,
         r,
         color: '#10b981',
-        label: `ID ${id.toFixed(1)}`,
+        label: baseRem > 0 ? `${baseDone + 1}/${baseTotal}` : `ID ${id.toFixed(1)}`,
+        subLabel: baseRem > 0 ? 'Basis' : undefined,
         id: Math.max(0.5, id),
         startX,
         startY,
@@ -146,7 +154,6 @@ export class TrialSpawner {
     const safeMaxR = Math.max(55, maxR);
     for (let i = 0; i <= steps; i++) {
       const u = i / steps;
-      // Rotate phase so outer GOAL (u=1) lands right at the 12 o'clock top (-PI/2)
       const theta = u * turns * Math.PI * 2 - turns * Math.PI * 2 - Math.PI / 2;
       const rad = 20 + u * (safeMaxR - 20);
       const tw = Math.max(14, (30 - u * 12) * this.app.reading.uiFontScale);
@@ -174,6 +181,10 @@ export class TrialSpawner {
     const st = this.app.reading.getCurrentStageConfig();
     const item = st.items[Math.floor(Math.random() * st.items.length)];
     this.app.activeReadingItem = item;
+
+    // Ask the Embedded Tutor for controlled multi-dimensional variation (distractors, 1x/2x targets, 1st-letter spotlight)
+    const plan = this.app.tutor.planNextReadingVariation(st.id, item.target);
+
     if (!silentPrompt) {
       this.app.voiceEngine.speakReadingItem(item, 'ASKING');
     }
@@ -192,9 +203,21 @@ export class TrialSpawner {
         Math.round((st.id >= 5 ? 34 : 28) * this.app.reading.uiFontScale),
       ),
     );
-    const allTexts = [item.target, ...item.distractors];
-    // Shuffle placement order via deterministic index permutation while keeping `isTarget` linked to index 0
-    const indices = allTexts.map((_, idx) => idx);
+
+    const chosenDistractors = item.distractors.slice(0, plan.distractorCount);
+    const rawEntries: Array<{ text: string; isTarget: boolean }> =
+      plan.targetCount === 2
+        ? [
+            { text: item.target, isTarget: true },
+            { text: item.target, isTarget: true },
+            ...chosenDistractors.map((d) => ({ text: d, isTarget: false })),
+          ]
+        : [
+            { text: item.target, isTarget: true },
+            ...chosenDistractors.map((d) => ({ text: d, isTarget: false })),
+          ];
+
+    const indices = rawEntries.map((_, idx) => idx);
     for (let i = indices.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       const tmp = indices[i];
@@ -202,8 +225,7 @@ export class TrialSpawner {
       indices[j] = tmp;
     }
 
-    // Precompute 5 clean fallback slots (left wing, lower-left, bottom-center, lower-right, right wing)
-    // guaranteed outside the Goal Center box & Scoop Dock on both portrait and landscape viewports!
+    // 6 clean non-overlapping fallback slots outside Goal Center & Scoop Dock
     const m = baseR + 8;
     const wingY = Math.min(playBottom - m, Math.max(safeTop + m + 18, cr.y + cr.h * 0.65));
     const lowY = Math.max(safeTop + m + 28, playBottom - m - 4);
@@ -211,9 +233,10 @@ export class TrialSpawner {
     const fallbackSlots = [
       { x: Math.max(safeLeft + m, cr.x - baseR - 26), y: wingY },
       { x: Math.min(safeRight - m, cr.x + cr.w + baseR + 26), y: wingY },
-      { x: Math.max(safeLeft + m, safeLeft + safeW * 0.24), y: midLowY },
-      { x: Math.min(safeRight - m, safeLeft + safeW * 0.76), y: midLowY },
-      { x: arena.cx, y: lowY },
+      { x: Math.max(safeLeft + m, safeLeft + safeW * 0.22), y: midLowY },
+      { x: Math.min(safeRight - m, safeLeft + safeW * 0.78), y: midLowY },
+      { x: Math.max(safeLeft + m, safeLeft + safeW * 0.34), y: lowY },
+      { x: Math.min(safeRight - m, safeLeft + safeW * 0.66), y: lowY },
     ];
 
     const placed: Array<{ idx: number; x: number; y: number }> = [];
@@ -229,7 +252,7 @@ export class TrialSpawner {
         const tx = safeLeft + m + Math.random() * Math.max(16, safeW - 2 * m);
         const ty = minSpawnY + Math.random() * spanY;
         if (this.app.layout.overlapsGoalDock(tx, ty, baseR, arena)) continue;
-        if (placed.every((o) => Math.hypot(tx - o.x, ty - o.y) >= baseR * 2.3)) {
+        if (placed.every((o) => Math.hypot(tx - o.x, ty - o.y) >= baseR * 2.25)) {
           chosen = { x: tx, y: ty };
           break;
         }
@@ -244,12 +267,13 @@ export class TrialSpawner {
 
     placed.sort((a, b) => a.idx - b.idx);
     this.app.readingTargets = placed.map((p) => ({
-      text: allTexts[p.idx],
-      isTarget: p.idx === 0,
+      text: rawEntries[p.idx].text,
+      isTarget: rawEntries[p.idx].isTarget,
       x: p.x,
       y: p.y,
       r: baseR,
     }));
-    this.app.target = this.app.readingTargets[0];
+    this.app.target =
+      this.app.readingTargets.find((rt) => rt.isTarget) ?? this.app.readingTargets[0];
   }
 }

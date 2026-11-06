@@ -12,8 +12,7 @@ export class LevelFlow {
   /**
    * Smart Envelope-Flying Tutor:
    * Counts successful trials in the current Tillmann grounding phase and automatically advances
-   * from Pulse Tap (1A) -> Shrinking Circle (1B) -> Tillmann Pointing (L2) -> Spiral Flight (L3) -> Adaptive Reading (L7).
-   * Once in Reading or when doing well, Auto-Fade memory progressively engages!
+   * from Pulse Tap (1A) -> Shrinking Circle (1B) -> Tillmann Pointing (L2) -> Adaptive Reading (L7).
    */
   advanceEnvelopeTutor(): boolean {
     this.app.phaseProgress++;
@@ -23,26 +22,26 @@ export class LevelFlow {
     if (this.app.autoScenarioEnabled && this.app.phaseProgress >= quota) {
       if (this.app.currentStepIdx < 4) {
         this.app.phaseProgress = 0;
-        this.app.currentStepIdx++;
+        // Jump straight from Level 2 Tillmann Baseline (step 2) to Level 7 Reading (step 4)
+        this.app.currentStepIdx = this.app.currentStepIdx === 2 ? 4 : this.app.currentStepIdx + 1;
         if (this.app.currentStepIdx === 4) {
           this.app.groundingComplete = true;
           this.app.hud.showToast(
-            '🎓 GROUNDING COMPLETE → READING FLIGHT!',
-            `Calibrated RT0=${Math.round(this.app.telemetry.rt0BaselineMs)}ms & We=${Math.round(this.app.telemetry.effectiveWidthRatio * 100)}%W. Auto-Fade Memory active!`,
+            '🎓 SCHERM-BASIS KLAAR → LEZEN!',
+            `Gekalibreerd RT0=${Math.round(this.app.telemetry.rt0BaselineMs)}ms & We=${Math.round(this.app.telemetry.effectiveWidthRatio * 100)}%W.`,
             'border-emerald-400',
           );
         } else {
           const nextCfg = this.app.levelSteps[this.app.currentStepIdx];
           this.app.hud.showToast(
             `✈️ ENVELOPE NEXT: ${nextCfg.badge.split('•')[1].trim()}`,
-            'Smart Tutor advancing your Tillmann grounding scenario...',
+            'Smart Tutor schakelt door naar de volgende stap...',
             'border-cyan-400',
           );
         }
         this.applyStepIndex(this.app.currentStepIdx, true);
         return true;
       } else {
-        // In Phase 5 (Reading): keep flying within the ZPD & memory envelope!
         this.app.phaseProgress = 0;
       }
     }
@@ -50,6 +49,13 @@ export class LevelFlow {
     return false;
   }
 
+  /**
+   * Always-present top-left `◀` / `▶` controls:
+   * - `◀` (`delta < 0`): immediate safety step-back (steps back 1 reading stage with polite scaffold,
+   *   or from Reading Stage 1 directly to Level 2 Tillmann Hit-Test circles!).
+   * - `▶` (`delta > 0`): steps forward through Reading Stages 1..6, or jumps directly from Level 2
+   *   Tillmann Baseline into Reading Stage 1!
+   */
   stepLevel(delta: number) {
     if (this.app.currentStepIdx === 4) {
       if (delta > 0 && this.app.reading.stage < 6) {
@@ -58,33 +64,79 @@ export class LevelFlow {
         this.app.goalMemory.calmFadeUnlocked = false;
         this.app.tutor.calmStreak = 0;
         this.app.tutor.stageHitStreak = 0;
+        this.app.tutor.consecutiveMisses = 0;
         this.app.tutor.temporaryStepBackTargetStage = null;
         this.syncStageUI();
         this.app.spawner.spawnForCurrentLevel();
         return;
-      } else if (delta < 0 && this.app.reading.stage > 1) {
-        this.app.reading.stage--;
+      } else if (delta < 0) {
         this.app.goalMemory.stageUnfadedStreak = 0;
         this.app.goalMemory.calmFadeUnlocked = false;
+        this.app.goalMemory.revealAlpha = 1.0;
         this.app.tutor.calmStreak = 0;
         this.app.tutor.stageHitStreak = 0;
+        this.app.tutor.consecutiveMisses = 0;
         this.app.tutor.temporaryStepBackTargetStage = null;
-        this.syncStageUI();
-        this.app.spawner.spawnForCurrentLevel();
-        return;
+
+        if (this.app.reading.stage > 1) {
+          this.app.reading.stage--;
+          this.app.tutor.politeScaffoldTrialsLeft = 1;
+          const speech = `Even rustig een stapje terug naar stap ${this.app.reading.stage}.`;
+          this.app.tutor.logExternalEvent(
+            'STEP_BACK',
+            `S${this.app.reading.stage}`,
+            `Handmatig veilig stapje terug (◀) naar leesstap ${this.app.reading.stage}/6.`,
+            speech,
+            'manual=◀',
+            'SOOTHING_COMFORT',
+          );
+          this.syncStageUI();
+          this.app.spawner.spawnForCurrentLevel(true);
+          this.app.hud.showToast(
+            `🛡️ STAPJE TERUG (STAP ${this.app.reading.stage}/6)`,
+            'Rustiger tempo met volledig zichtbaar doel!',
+            'border-amber-400',
+          );
+          if (this.app.voiceEngine.enabled && this.app.firstTouchUnlocked) {
+            const nextQ = this.app.tutor.pickNextTargetPrompt(this.app.activeReadingItem?.target);
+            this.app.voiceEngine.speakDutchTutor(speech, nextQ, 'SOOTHING_COMFORT');
+          }
+          return;
+        } else {
+          // From Reading Stage 1, safety step-back `◀` goes straight to calm Level 2 Tillmann circles!
+          const started = this.app.tutor.startBaselineSession(2, true);
+          this.applyStepIndex(2, false, true);
+          this.app.hud.showToast(
+            '🛡️ TERUG NAAR TILLMANN RONDJES',
+            started.dutchSpeech,
+            'border-cyan-400',
+          );
+          if (this.app.voiceEngine.enabled && this.app.firstTouchUnlocked) {
+            this.app.voiceEngine.speakDutchTutor(started.dutchSpeech, null, started.voiceEmotion);
+          }
+          return;
+        }
       }
     }
+
+    if (this.app.currentStepIdx === 2 && delta > 0) {
+      this.app.tutor.baselineHitsRemaining = 0;
+      this.app.tutor.isPeriodicBaselineCheck = false;
+      this.app.groundingComplete = true;
+      this.applyStepIndex(4, false);
+      return;
+    }
+
     const total = this.app.levelSteps.length;
     this.app.currentStepIdx = (this.app.currentStepIdx + delta + total) % total;
     this.applyStepIndex(this.app.currentStepIdx, false);
   }
 
-  applyStepIndex(idx: number, fromAutoTutor = false) {
+  applyStepIndex(idx: number, fromAutoTutor = false, silentPrompt = false) {
     this.app.currentStepIdx = Math.max(0, Math.min(this.app.levelSteps.length - 1, idx));
     if (!fromAutoTutor) {
       this.app.phaseProgress = 0;
     }
-    // Reset per-stage unfaded baseline check whenever entering a new game phase
     this.app.goalMemory.stageUnfadedStreak = 0;
     this.app.goalMemory.calmFadeUnlocked = false;
     const cfg = this.app.levelSteps[this.app.currentStepIdx];
@@ -93,7 +145,7 @@ export class LevelFlow {
     this.app.scope3Mode =
       this.app.level === 1 && this.app.l1Mode === 'zero' ? 'PUT_HAZARD' : 'BULLSEYE_MAP';
     this.syncStageUI();
-    this.app.spawner.spawnForCurrentLevel();
+    this.app.spawner.spawnForCurrentLevel(silentPrompt);
     this.app.persistence.saveToBrowser(this.app);
   }
 
@@ -101,27 +153,38 @@ export class LevelFlow {
     const cfg = this.app.levelSteps[this.app.currentStepIdx];
     const quota = cfg ? cfg.quota : 4;
     const stageBadge = maybeById('activeStageBadge');
+    const baseRem = this.app.tutor.baselineHitsRemaining;
+    const baseTotal = Math.max(1, this.app.tutor.baselineTotalQuota);
+    const baseDone = Math.max(0, baseTotal - baseRem);
+
     if (stageBadge) {
-      stageBadge.textContent =
-        this.app.level === 7
-          ? `Phase 5/5 • Reading Stage ${this.app.reading.stage}/6 (${this.app.reading.getCurrentStageConfig().name.split(':')[1].trim()})`
-          : cfg.badge;
+      if (this.app.level === 2 && baseRem > 0) {
+        stageBadge.textContent = `Tillmann Scherm-Basis • Rondje ${baseDone}/${baseTotal} (Motorische Referentie)`;
+      } else if (this.app.level === 7) {
+        stageBadge.textContent = `Phase 5/5 • Reading Stage ${this.app.reading.stage}/6 (${this.app.reading.getCurrentStageConfig().name.split(':')[1].trim()})`;
+      } else {
+        stageBadge.textContent = cfg.badge;
+      }
     }
 
     const envPill = maybeById('envelopePhasePill');
     if (envPill) {
-      const reqHits = this.app.goalMemory.RequiredBaselineHits || 1;
-      let memTag = '👁️ STEADY (NO FADE)';
-      if (this.app.goalMemory.mode !== 'ALWAYS') {
-        if (this.app.goalMemory.calmFadeUnlocked) {
-          memTag = `🌅 FADE ACTIVE (${(this.app.goalMemory.initialShowMs / 1000).toFixed(2)}s hold → ${(this.app.goalMemory.fadeDurationMs / 1000).toFixed(1)}s fade)`;
-        } else {
-          memTag = `👁️ BASELINE CHECK (${this.app.goalMemory.stageUnfadedStreak}/${reqHits} unfaded)`;
+      if (this.app.level === 2 && baseRem > 0) {
+        envPill.textContent = `🎯 SCHERM-BASIS (${baseDone}/${baseTotal} rondjes) • VAST DOEL`;
+      } else {
+        const reqHits = this.app.goalMemory.RequiredBaselineHits || 1;
+        let memTag = '👁️ STEADY (NO FADE)';
+        if (this.app.goalMemory.mode !== 'ALWAYS') {
+          if (this.app.goalMemory.calmFadeUnlocked) {
+            memTag = `🌅 FADE ACTIVE (${(this.app.goalMemory.initialShowMs / 1000).toFixed(2)}s hold → ${(this.app.goalMemory.fadeDurationMs / 1000).toFixed(1)}s fade)`;
+          } else {
+            memTag = `👁️ BASELINE CHECK (${this.app.goalMemory.stageUnfadedStreak}/${reqHits} unfaded)`;
+          }
         }
+        envPill.textContent = this.app.autoScenarioEnabled
+          ? `STEP ${this.app.currentStepIdx + 1}/5 (${this.app.phaseProgress}/${quota}) • ${memTag}`
+          : `MANUAL MODE • ${memTag}`;
       }
-      envPill.textContent = this.app.autoScenarioEnabled
-        ? `STEP ${this.app.currentStepIdx + 1}/5 (${this.app.phaseProgress}/${quota}) • ${memTag}`
-        : `MANUAL MODE • ${memTag}`;
     }
 
     document.querySelectorAll<HTMLElement>('.lvl-btn').forEach((b) => {
@@ -142,7 +205,11 @@ export class LevelFlow {
     const learnerLbl = maybeById('learnerNameLabel');
     if (learnerLbl) learnerLbl.textContent = this.app.persistence.activeNickname;
     const tutorCountLbl = maybeById('btnHumanTutorBadge');
-    if (tutorCountLbl) tutorCountLbl.textContent = String(this.app.tutor.tickers.length);
+    if (tutorCountLbl) {
+      const entryCount = this.app.feedback.entries.length;
+      tutorCountLbl.textContent =
+        entryCount > 0 ? `${entryCount}📋` : String(this.app.tutor.tickers.length);
+    }
 
     this.app.hud.updateHUDText();
     setTimeout(() => {

@@ -100,7 +100,7 @@ export class HitProcessor {
     const d = Math.hypot(x - target.x, y - target.y);
     if (d <= target.r * 1.25) {
       this.recordPointingSuccess(now, target.id, x, y, target);
-      this.app.voiceEngine.playPreset(d < target.r * 0.3 ? 'OH_WOOW' : 'CHICKEN_TOK');
+      this.app.voiceEngine.playBachGloriaPresent(0.03);
       this.app.shrinkRadius =
         this.app.shrinkRadius > 14 ? Math.max(12, this.app.shrinkRadius * 0.84) : 78;
       this.countCorrectTrial();
@@ -108,19 +108,73 @@ export class HitProcessor {
     }
   }
 
-  /** Level 2 Fitts pointing at a circle or a square target. */
+  /** Level 2 Tillmann Fitts pointing: establishes initial/periodic screen baseline with Dutch feedback & morph reward. */
   private tapFittsTarget(x: number, y: number, now: number, target: PointingTarget): void {
     const d = Math.hypot(x - target.x, y - target.y);
     const hit =
       this.app.l2Shape === 'circle'
         ? d <= target.r * 1.25
         : Math.abs(x - target.x) <= target.r * 1.25 && Math.abs(y - target.y) <= target.r * 1.25;
-    if (hit) {
-      this.recordPointingSuccess(now, target.id, x, y, target);
-      this.app.voiceEngine.playPreset(d < target.r * 0.3 ? 'OH_WOOW' : 'FROG_SKEEE');
-      this.countCorrectTrial();
-      this.finishTrial();
+    if (!hit) return;
+
+    const mt = Math.max(60, now - this.app.trialStartTime);
+    const normRadiusPct = Math.min(1.0, d / Math.max(8, target.r));
+    this.recordPointingSuccess(now, target.id, x, y, target);
+    this.app.voiceEngine.playBachGloriaPresent(0.03);
+
+    if (this.app.semanticMorphEnabled) {
+      this.app.activeMorphs.push({
+        x: target.x,
+        y: target.y,
+        r: target.r,
+        startTime: now,
+        durationMs: 1850,
+        semanticKey: 'BALL',
+        label: '✨ Raak!',
+        gazeDwellMs: 0,
+        variantSeed: this.app.morphCounter++,
+      });
     }
+
+    if (this.app.tutor.baselineHitsRemaining > 0) {
+      const baseOut = this.app.tutor.recordBaselineHit(mt, normRadiusPct);
+      if (baseOut.completed) {
+        this.app.groundingComplete = true;
+        this.app.phaseProgress = 0;
+        this.app.flow.applyStepIndex(4, true, true);
+        const msg =
+          baseOut.dutchSpeech ||
+          'Super! Het op het scherm dingen doen gaat hartstikke soepel — nu gaan we lezen!';
+        this.app.hud.showToast(
+          `🎯 SCHERM-BASIS KLAAR → LEZEN (STAP ${this.app.reading.stage}/6)!`,
+          msg,
+          'border-emerald-400',
+        );
+        const nextPrompt = this.app.tutor.pickNextTargetPrompt(this.app.activeReadingItem?.target);
+        this.app.voiceEngine.speakDutchTutor(msg, nextPrompt, baseOut.voiceEmotion, 0.18);
+        return;
+      }
+
+      this.app.phaseProgress = baseOut.hitsDone;
+      this.app.persistence.saveToBrowser(this.app);
+      this.app.spawner.spawnForCurrentLevel(true);
+      this.app.flow.syncStageUI();
+      if (baseOut.dutchSpeech) {
+        this.app.hud.showToast(
+          `🎯 RONDJE ${baseOut.hitsDone}/${baseOut.totalQuota} RAAK!`,
+          baseOut.dutchSpeech,
+          'border-emerald-400',
+        );
+        this.app.voiceEngine.speakDutchTutor(baseOut.dutchSpeech, null, baseOut.voiceEmotion, 0.14);
+      } else {
+        this.app.voiceEngine.playPreset(d < target.r * 0.3 ? 'OH_WOOW' : 'FROG_SKEEE');
+      }
+      return;
+    }
+
+    this.app.voiceEngine.playPreset(d < target.r * 0.3 ? 'OH_WOOW' : 'FROG_SKEEE');
+    this.countCorrectTrial();
+    this.finishTrial();
   }
 
   /** Level 3: touching the START disc arms the steering tunnel. */
@@ -137,10 +191,46 @@ export class HitProcessor {
     }
   }
 
-  /** Level 7: the first bubble under the drop is evaluated by the Embedded Tutor & Adaptive Reading Engine. */
+  /** Level 7: evaluates single or Dual-Target (`2x`) drops with the Embedded Tutor & Adaptive Reading Engine. */
   private tapReadingBubble(x: number, y: number, now: number): void {
     const rt = this.app.readingTargets.find((b) => Math.hypot(x - b.x, y - b.y) <= b.r * 1.28);
     if (!rt) return;
+
+    // Dual-Target intermediate catch: if 2 matching targets exist, celebrate #1 and invite catching #2!
+    const remainingTargets = this.app.readingTargets.filter((b) => b.isTarget);
+    if (rt.isTarget && remainingTargets.length > 1) {
+      const chord = Math.max(
+        30,
+        Math.hypot(rt.x - this.app.trialStartPos.x, rt.y - this.app.trialStartPos.y),
+      );
+      const id = Math.log2(chord / (2 * rt.r) + 1);
+      this.recordPointingSuccess(now, id, x, y, rt);
+
+      this.app.readingTargets = this.app.readingTargets.filter((b) => b !== rt);
+      this.app.target =
+        this.app.readingTargets.find((b) => b.isTarget) ?? this.app.readingTargets[0];
+      this.app.layout.resetScoopVisorPosition();
+      this.app.trialStartPos = { x: this.app.scoopVisor.visorX, y: this.app.scoopVisor.visorY };
+
+      this.app.voiceEngine.playBachGloriaPresent(0.04);
+      if (this.app.semanticMorphEnabled) {
+        this.app.activeMorphs.push({
+          x: rt.x,
+          y: rt.y,
+          r: rt.r,
+          startTime: now,
+          durationMs: 1850,
+          semanticKey: this.app.activeReadingItem?.morph || 'BALL',
+          label: `1/2 ${rt.text}`,
+          gazeDwellMs: 0,
+          variantSeed: this.app.morphCounter++,
+        });
+      }
+      const firstHitSpeech = this.app.tutor.buildDualTargetFirstHitSpeech(rt.text);
+      this.app.hud.showToast('🎯 1 VAN DE 2 GEVANGEN!', firstHitSpeech, 'border-emerald-400');
+      this.app.voiceEngine.speakDutchTutor(firstHitSpeech, null, 'PLAYFUL_GIGGLE', 0.16);
+      return;
+    }
 
     const mt = Math.max(80, now - this.app.trialStartTime);
     const hw = Math.round(this.app.telemetry.inputToPhotonMs);
@@ -151,7 +241,6 @@ export class HitProcessor {
     const pull = this.distractorPull();
     const radialNormPct = Math.min(1.0, Math.hypot(x - rt.x, y - rt.y) / Math.max(8, rt.r));
 
-    // Update telemetry stats on AdaptiveReadingEngine (without letting its raw 3-hit rule override the Tutor!)
     const prevAuto = this.app.reading.autoZPD;
     this.app.reading.autoZPD = false;
     this.app.reading.evaluateTrial(rt.isTarget, brain, pull, mt);
@@ -239,22 +328,8 @@ export class HitProcessor {
     this.recordPointingSuccess(now, id, x, y, rt);
     this.app.persistence.saveToBrowser(this.app);
 
-    // Spawn next trial silently first so we know the next target and never cancel active praise!
-    if (!this.app.flow.advanceEnvelopeTutor()) {
-      this.app.spawner.spawnForCurrentLevel(true);
-    }
-    this.app.flow.syncStageUI();
-
-    const nextPrompt =
-      this.app.level === 7
-        ? this.app.tutor.pickNextTargetPrompt(this.app.activeReadingItem?.target)
-        : null;
-
-    // Play the hit letter's acoustic joke; skip its single-word TTS if the Tutor is speaking a full emotional phrase!
-    const jokeSub = this.app.voiceEngine.speakGraphemeOrWord(rt.text, 'CELEBRATE', {
-      skipHumanSpeech: Boolean(dutchCoachLine),
-      nextPromptLine: dutchCoachLine ? null : nextPrompt,
-    });
+    // Reward with a gentle 1-bar J.S. Bach Gloria (Fender-Rhodes ↔ Human-Voice Choir) musical present!
+    this.app.voiceEngine.playBachGloriaPresent(0.05);
 
     if (this.app.semanticMorphEnabled && prevItem) {
       this.app.activeMorphs.push({
@@ -262,31 +337,87 @@ export class HitProcessor {
         y: rt.y,
         r: rt.r,
         startTime: now,
-        durationMs: 1350,
+        durationMs: 2050,
         semanticKey: prevItem.morph || 'BALL',
-        label: jokeSub || prevItem.morphLabel || rt.text,
+        label: prevItem.morphLabel || rt.text,
         gazeDwellMs: 0,
+        variantSeed: this.app.morphCounter++,
       });
+    }
+
+    // Periodic 2-circle Tillmann screen checkup after every 8 calm reading hits
+    if (stageChanged === 'STEADY') {
+      const periodic = this.app.tutor.shouldTriggerPeriodicBaselineCheck();
+      if (periodic.trigger) {
+        this.app.flow.applyStepIndex(2, true, true);
+        const checkMsg =
+          periodic.dutchSpeech ||
+          'Even tussendoor twee groene rondjes vangen om te kijken hoe soepel het op het scherm gaat!';
+        this.app.hud.showToast(
+          '🎯 EVEN TUSSENDOOR: SCHERM-CHECK (2 RONDJES)',
+          checkMsg,
+          'border-cyan-400',
+        );
+        this.app.voiceEngine.speakDutchTutor(checkMsg, null, periodic.voiceEmotion, 0.22);
+        return;
+      }
+    }
+
+    // Spawn next trial silently first so we know the next target (and whether First-Letter Spotlight is active!)
+    if (!this.app.flow.advanceEnvelopeTutor()) {
+      this.app.spawner.spawnForCurrentLevel(true);
+    }
+    this.app.flow.syncStageUI();
+
+    let effectiveCoachLine = dutchCoachLine;
+    let effectiveEmotion = voiceEmotion;
+    let nextPrompt =
+      this.app.level === 7
+        ? this.app.tutor.pickNextTargetPrompt(this.app.activeReadingItem?.target)
+        : null;
+
+    // When returning up after 2 warm-up hits, explain the visual First-Letter Spotlight in Dutch!
+    if (
+      stageChanged === 'RETURNED_UP' &&
+      this.app.tutor.activeVariation.politeFirstLetterScaffold
+    ) {
+      const bridgeLine = this.app.tutor.buildPoliteFirstLetterSpeech(
+        this.app.activeReadingItem?.target,
+        this.app.reading.stage,
+      );
+      if (bridgeLine) {
+        effectiveCoachLine = bridgeLine;
+        effectiveEmotion = 'CURIOUS_WONDER';
+        nextPrompt = null;
+      }
+    }
+
+    const jokeSub = this.app.voiceEngine.speakGraphemeOrWord(rt.text, 'CELEBRATE', {
+      skipHumanSpeech: Boolean(effectiveCoachLine),
+      nextPromptLine: effectiveCoachLine ? null : nextPrompt,
+    });
+    if (jokeSub && this.app.activeMorphs.length > 0) {
+      this.app.activeMorphs[this.app.activeMorphs.length - 1].label = jokeSub;
     }
 
     if (stageChanged === 'PROMOTED') {
       this.app.hud.showToast(
         `🎉 KNAP GELEZEN! DOOR NAAR STAP ${this.app.reading.stage}/6!`,
-        dutchCoachLine || this.app.reading.getCurrentStageConfig().name,
+        effectiveCoachLine || this.app.reading.getCurrentStageConfig().name,
         'border-emerald-400',
       );
     } else if (stageChanged === 'RETURNED_UP') {
       this.app.hud.showToast(
-        `🌟 WARM-UP KLAAR → TERUG NAAR STAP ${this.app.reading.stage}/6!`,
-        dutchCoachLine || 'Super gedaan! We gaan weer lekker verder.',
-        'border-emerald-400',
+        `🔎 VRIENDELIJKE HERSTART OP STAP ${this.app.reading.stage}/6!`,
+        effectiveCoachLine || 'Kijk naar de eerste letter van elk woordje!',
+        'border-amber-400',
       );
-    } else if (dutchCoachLine) {
-      this.app.hud.showToast('🗣️ NEDERLANDSE TUTOR', dutchCoachLine, 'border-emerald-400');
+    } else if (effectiveCoachLine) {
+      this.app.hud.showToast('🗣️ NEDERLANDSE TUTOR', effectiveCoachLine, 'border-emerald-400');
     }
 
-    if (dutchCoachLine) {
-      this.app.voiceEngine.speakDutchTutor(dutchCoachLine, nextPrompt, voiceEmotion, 0.34);
+    if (effectiveCoachLine) {
+      this.app.voiceEngine.speakDutchTutor(effectiveCoachLine, nextPrompt, effectiveEmotion, 0.34);
     }
   }
 
@@ -418,7 +549,7 @@ export class HitProcessor {
       const hw = Math.round(this.app.telemetry.inputToPhotonMs);
       const brain = Math.round(Math.min(mt * 0.25, this.app.telemetry.rt0BaselineMs));
       const rem = Math.max(40, mt - hw - brain);
-      this.app.voiceEngine.playPreset('FROG_SKEEE');
+      this.app.voiceEngine.playBachGloriaPresent(0.03);
       this.app.telemetry.addTrial({
         id: 6.8,
         mt,

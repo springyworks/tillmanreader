@@ -88,6 +88,7 @@ export class LabApp {
   /** Semantic circle -> SVG morph celebration: whether it rewards or distracts is measured. */
   semanticMorphEnabled: boolean;
   activeMorphs: ActiveMorph[];
+  morphCounter: number;
   readonly scoopVisor: ScoopVisorState;
 
   readonly levelSteps: readonly LevelStep[];
@@ -175,9 +176,10 @@ export class LabApp {
     this.feedback = new FeedbackCollector();
     this.guiPickModeActive = false;
 
-    // Semantic Circle -> SVG Morphing State (Celebrates hits & measures whether it's rewarding or distracting!)
+    // Semantic Circle -> Thin Black-on-White Kinetic Line-Art Morphing State
     this.semanticMorphEnabled = true;
     this.activeMorphs = [];
+    this.morphCounter = 0;
 
     /**
      * ANTI-FAT-FINGER (FFP) OFFSET SCOOP-VISOR DRAG & DROP RIG:
@@ -223,8 +225,8 @@ export class LabApp {
         step: 2,
         level: 2,
         l1Mode: 'zero',
-        badge: 'Phase 3/5 • Tillmann Target Shoot (Slope b)',
-        quota: 5,
+        badge: 'Phase 3/5 • Tillmann Hit-Test Baseline (3 rondjes)',
+        quota: 3,
       },
       {
         step: 3,
@@ -241,11 +243,10 @@ export class LabApp {
         quota: 6,
       },
     ];
-    // INSTANT PLAYABLE TILLMANN READER ON URL OPEN (Step 4 = Level 7 Reading):
-    // Children never have to sit through calibration dots first—Tillmann motor grounding happens
-    // automatically inside every letter-scoop trajectory!
-    this.currentStepIdx = 4;
-    this.level = 7;
+    // STANDARD LAUNCH ON TILLMANN HIT-TEST BASELINE (Step 2 = Level 2):
+    // Establishes 3-circle motor/screen baseline reference on URL open before jumping into Reading (Level 7)!
+    this.currentStepIdx = 2;
+    this.level = 2;
     this.l1Mode = 'zero';
     this.l2Shape = 'circle';
     this.firstTouchUnlocked = false;
@@ -254,7 +255,7 @@ export class LabApp {
     // Smart Envelope-Flying Tutor State
     this.autoScenarioEnabled = true;
     this.phaseProgress = 0;
-    this.groundingComplete = true;
+    this.groundingComplete = false;
 
     this.scope3Mode = 'BULLSEYE_MAP';
     this.drawerState = 0; // Default hidden (State 0) so the play arena is 100% unobstructed on launch
@@ -325,17 +326,21 @@ export class LabApp {
       this.tutor.calmStreak = this.goalMemory.stageUnfadedStreak;
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('mode') !== 'lab') {
-        this.currentStepIdx = 4;
+        // Always open standard URL on Level 2 Tillmann Hit-Test to establish fresh screen baseline
+        this.currentStepIdx = 2;
+        this.groundingComplete = false;
+        this.phaseProgress = 0;
+        this.tutor.startBaselineSession(3, false);
       }
-      const cfg = this.levelSteps[this.currentStepIdx] || this.levelSteps[4];
+      const cfg = this.levelSteps[this.currentStepIdx] || this.levelSteps[2];
       this.level = cfg.level;
       this.l1Mode = cfg.l1Mode;
       this.tutor.logExternalEvent(
         'WELCOME',
-        `S${this.reading.stage}`,
-        `Profiel hersteld voor ${this.persistence.activeNickname} (${this.telemetry.trials.length} trials, stap ${this.reading.stage}/6).`,
-        `Welkom terug, ${this.tutor.vocative()}!`,
-        `fade=${this.goalMemory.calmFadeUnlocked ? 'ON' : 'STEADY'}`,
+        `L2→S${this.reading.stage}`,
+        `Profiel hersteld voor ${this.persistence.activeNickname} (${this.telemetry.trials.length} trials, leesstap ${this.reading.stage}/6 na 3 scherm-rondjes).`,
+        `Welkom terug, ${this.tutor.vocative()}! Eerst drie groene scherm-rondjes, daarna verder bij stap ${this.reading.stage}.`,
+        `baseline=0/3 • fade=${this.goalMemory.calmFadeUnlocked ? 'ON' : 'STEADY'}`,
       );
     }
 
@@ -430,9 +435,10 @@ export class LabApp {
     this.goalMemory.autoStreak = 0;
     this.goalMemory.calmFadeUnlocked = false;
     this.goalMemory.revealAlpha = 1.0;
-    this.currentStepIdx = 4;
-    this.level = 7;
+    this.currentStepIdx = 2;
+    this.level = 2;
     this.l1Mode = 'zero';
+    this.groundingComplete = false;
     this.phaseProgress = 0;
     this.tutor.resetForLearner(this.persistence.activeNickname);
     this.flow.configureGoalMemoryParameters();
@@ -449,22 +455,25 @@ export class LabApp {
     } else {
       this.tutor.learnerName = this.persistence.activeNickname;
       this.tutor.calmStreak = this.goalMemory.stageUnfadedStreak;
-      const cfg = this.levelSteps[this.currentStepIdx] || this.levelSteps[4];
-      this.level = cfg.level;
-      this.l1Mode = cfg.l1Mode;
+      this.currentStepIdx = 2;
+      this.level = 2;
+      this.l1Mode = 'zero';
+      this.groundingComplete = false;
+      this.phaseProgress = 0;
+      this.tutor.startBaselineSession(2, true);
       this.tutor.logExternalEvent(
         'WELCOME',
-        `S${this.reading.stage}`,
-        `Gewisseld naar ${this.persistence.activeNickname} (${this.telemetry.trials.length} trials, stap ${this.reading.stage}/6).`,
-        `Hoi ${this.tutor.vocative()}! We gaan lekker verder bij stap ${this.reading.stage}.`,
+        `L2→S${this.reading.stage}`,
+        `Gewisseld naar ${this.persistence.activeNickname} (${this.telemetry.trials.length} trials, even 2 scherm-rondjes voor stap ${this.reading.stage}/6).`,
+        `Hoi ${this.tutor.vocative()}! Even twee groene rondjes en dan verder bij stap ${this.reading.stage}.`,
       );
     }
     this.flow.syncStageUI();
     this.spawner.spawnForCurrentLevel(true);
     if (this.voiceEngine.enabled && this.firstTouchUnlocked) {
       this.voiceEngine.speakDutchTutor(
-        `Hoi ${this.tutor.vocative()}!`,
-        this.level === 7 ? this.activeReadingItem?.target : null,
+        `Hoi ${this.tutor.vocative()}! Vang eerst rustig de groene rondjes.`,
+        null,
       );
     }
   }

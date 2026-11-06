@@ -1,3 +1,4 @@
+import { BachGloriaSynth, computeAutoDuckTargets } from './bach-gloria-synth';
 import {
   VOICE_EMOTION_PROFILES,
   computeUtteranceProsody,
@@ -90,6 +91,10 @@ export class VocalTractFormantEngine {
   enabled: boolean;
   ctx: AudioContext | null;
   masterGain: GainNode | null;
+  bgDuckGain: GainNode | null;
+  bgDistanceFilter: BiquadFilterNode | null;
+  readonly bachGloria: BachGloriaSynth;
+  isSpeechDuckingActive: boolean;
   noiseBuffer: AudioBuffer | null;
   utteranceCount: number;
   lastPresetPlayed: VocalPresetName | 'NONE';
@@ -101,6 +106,8 @@ export class VocalTractFormantEngine {
   /** Stays `undefined` in browsers without speech synthesis, where `initSpeechSynthesisVoices` returns early. */
   _voicesLoaded: boolean | undefined;
   private suppressHumanSpeech = false;
+  private activeSpeechCount = 0;
+  private duckSafetyTimer: number | undefined;
 
   /**
    * Pure Parametric Articulatory & Formant Vocal-Tract Synthesizer + Clear Human Speech
@@ -124,6 +131,10 @@ export class VocalTractFormantEngine {
     this.enabled = false; // Strictly DEFAULT OFF until user taps Hero Audio Button!
     this.ctx = null;
     this.masterGain = null;
+    this.bgDuckGain = null;
+    this.bgDistanceFilter = null;
+    this.bachGloria = new BachGloriaSynth();
+    this.isSpeechDuckingActive = false;
     this.noiseBuffer = null;
     this.utteranceCount = 0;
     this.lastPresetPlayed = 'NONE';
@@ -197,16 +208,41 @@ export class VocalTractFormantEngine {
     try {
       if (flushQueue) {
         window.speechSynthesis.cancel();
+        this.activeSpeechCount = 0;
+        clearTimeout(this.duckSafetyTimer);
       }
       const utter = new SpeechSynthesisUtterance(spokenText);
       if (this.nlVoice) utter.voice = this.nlVoice;
       utter.lang = this.nlVoice && this.nlVoice.lang ? this.nlVoice.lang : 'nl-NL';
       utter.pitch = pitch;
       utter.rate = rate;
-      utter.volume = volume;
+      utter.volume = Math.min(1, Math.max(0.88, volume));
+
+      this.activeSpeechCount++;
+      this.applyAutoDuck(true);
+      let settled = false;
+      const onDone = () => {
+        if (settled) return;
+        settled = true;
+        this.activeSpeechCount = Math.max(0, this.activeSpeechCount - 1);
+        if (this.activeSpeechCount === 0) {
+          this.applyAutoDuck(false);
+        }
+      };
+      utter.onend = onDone;
+      utter.onerror = onDone;
+
+      clearTimeout(this.duckSafetyTimer);
+      const estMs = Math.max(950, Math.min(6200, spokenText.length * 72 + 550));
+      this.duckSafetyTimer = window.setTimeout(() => {
+        this.activeSpeechCount = 0;
+        this.applyAutoDuck(false);
+      }, estMs);
+
       window.speechSynthesis.speak(utter);
     } catch {
       // Speech is an optional extra on top of the synthesized voice; never let it interrupt the sounds.
+      this.applyAutoDuck(false);
     }
   }
 
@@ -314,13 +350,61 @@ export class VocalTractFormantEngine {
     return line;
   }
 
+  /**
+   * Near/Far Automatic Gain Control (AGC): ducks background Bach music & ambient layers softly
+   * "far away" (low gain + warm 820 Hz lowpass) while the foreground Dutch voice speaks, then
+   * gently brings them "close by" (4600 Hz + full delicate gift gain) once speech finishes.
+   */
+  applyAutoDuck(voiceSpeaking: boolean): void {
+    this.isSpeechDuckingActive = voiceSpeaking;
+    if (!this.ctx || !this.bgDuckGain || !this.bgDistanceFilter) return;
+    const target = computeAutoDuckTargets(voiceSpeaking, 0.22);
+    const now = this.ctx.currentTime;
+    this.bgDuckGain.gain.cancelScheduledValues(now);
+    this.bgDuckGain.gain.setTargetAtTime(target.gain, now, target.timeConstantSec);
+    this.bgDistanceFilter.frequency.cancelScheduledValues(now);
+    this.bgDistanceFilter.frequency.setTargetAtTime(target.lowpassHz, now, target.timeConstantSec);
+  }
+
+  /**
+   * Unwraps the next 1-bar J.S. Bach *Gloria* musical present on the Fender-Rhodes <-> Human-Voice
+   * morphing synth routed through the Near/Far Auto-Ducking AGC bus.
+   */
+  playBachGloriaPresent(startDelaySec = 0.04): number {
+    if (!this.enabled) return 0;
+    this.ensureContext();
+    if (!this.ctx || !this.bgDistanceFilter) return 0;
+    return this.bachGloria.playNextPresent(this.ctx, this.bgDistanceFilter, startDelaySec);
+  }
+
   ensureContext(): void {
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AudioCtx();
+
+      // Gentle mastering AGC / limiter so foreground formants + background chords never clip
+      const agcCompressor = this.ctx.createDynamicsCompressor();
+      agcCompressor.threshold.value = -14;
+      agcCompressor.knee.value = 18;
+      agcCompressor.ratio.value = 4;
+      agcCompressor.attack.value = 0.005;
+      agcCompressor.release.value = 0.16;
+      agcCompressor.connect(this.ctx.destination);
+
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = 0.45;
-      this.masterGain.connect(this.ctx.destination);
+      this.masterGain.gain.value = 0.44;
+      this.masterGain.connect(agcCompressor);
+
+      // Background Music & Present Bus with Near/Far Lowpass + Auto-Ducking Gain
+      this.bgDuckGain = this.ctx.createGain();
+      this.bgDuckGain.gain.value = 0.22;
+      this.bgDuckGain.connect(agcCompressor);
+
+      this.bgDistanceFilter = this.ctx.createBiquadFilter();
+      this.bgDistanceFilter.type = 'lowpass';
+      this.bgDistanceFilter.frequency.value = 4600;
+      this.bgDistanceFilter.Q.value = 0.7;
+      this.bgDistanceFilter.connect(this.bgDuckGain);
 
       const sr = this.ctx.sampleRate;
       this.noiseBuffer = this.ctx.createBuffer(1, sr * 2, sr);

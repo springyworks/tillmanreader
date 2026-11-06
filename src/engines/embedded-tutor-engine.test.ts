@@ -11,7 +11,6 @@ describe('EmbeddedTutorEngine', () => {
     expect(before.initialShowMs).toBeGreaterThan(90000);
     expect(before.cloakTargets).toBe(false);
 
-    // Simulate relaxed 5.8s - 9.1s child Scoop-Visor drags with low distractor pull (like live Android play)
     const childDragTimes = [9110, 8334, 5780, 4900];
     for (let i = 0; i < 4; i++) {
       const res = tutor.evaluateReadingTrial(
@@ -93,7 +92,6 @@ describe('EmbeddedTutorEngine', () => {
       if (nextQ) prompts.push(nextQ);
     }
 
-    // No two adjacent spoken lines or adjacent target prompts may be identical
     for (let i = 1; i < spokenLines.length; i++) {
       expect(spokenLines[i]).not.toBe(spokenLines[i - 1]);
     }
@@ -101,17 +99,58 @@ describe('EmbeddedTutorEngine', () => {
       expect(prompts[i]).not.toBe(prompts[i - 1]);
     }
 
-    // "beste leerling" must NOT appear in more than 1 spoken line across 12 trials
     const besteLeerlingMentions = spokenLines.filter((l) =>
       l.toLowerCase().includes('beste leerling'),
     ).length;
     expect(besteLeerlingMentions).toBeLessThanOrEqual(1);
-
-    // Multiple distinct emotions were activated dynamically
     expect(emotions.size).toBeGreaterThanOrEqual(3);
   });
 
-  it('steps back temporarily for 2 warm-up hits after 2 misses and announces it soothingly in Dutch', () => {
+  it('completes the 3-hit initial Tillmann screen baseline and triggers periodic 2-hit baseline checkups after 8 reading hits', () => {
+    const tutor = new EmbeddedTutorEngine();
+    tutor.resetForLearner('Noor');
+    expect(tutor.baselineHitsRemaining).toBe(3);
+
+    const b1 = tutor.recordBaselineHit(1200, 0.25);
+    expect(b1.completed).toBe(false);
+    expect(b1.dutchSpeech).toContain('groene rondjes');
+
+    const b2 = tutor.recordBaselineHit(1050, 0.22);
+    expect(b2.completed).toBe(false);
+
+    const b3 = tutor.recordBaselineHit(980, 0.19);
+    expect(b3.completed).toBe(true);
+    expect(b3.voiceEmotion).toBe('PROUD_CELEBRATE');
+    expect(b3.dutchSpeech).toContain('Noor');
+    expect(b3.dutchSpeech?.toLowerCase()).toContain('scherm');
+
+    for (let i = 0; i < 8; i++) {
+      tutor.evaluateReadingTrial(
+        {
+          hit: true,
+          readingStage: 3,
+          mtMs: 2200,
+          decodeMs: 650,
+          distractorPullPx: 8,
+          radialNormPct: 0.3,
+          goalPeeks: 0,
+          targetLabel: 'ik',
+        },
+        false,
+        'AUTO_PROG',
+        720,
+        i,
+        1.15,
+      );
+    }
+
+    const check = tutor.shouldTriggerPeriodicBaselineCheck();
+    expect(check.trigger).toBe(true);
+    expect(tutor.baselineHitsRemaining).toBe(2);
+    expect(check.dutchSpeech?.toLowerCase()).toContain('scherm');
+  });
+
+  it('steps back for 2 warm-up hits after 2 misses, then retries politely with First-Letter spotlight & Dutch voice bridge', () => {
     const tutor = new EmbeddedTutorEngine();
     tutor.resetForLearner('Daan');
 
@@ -124,7 +163,7 @@ describe('EmbeddedTutorEngine', () => {
         distractorPullPx: 50,
         radialNormPct: 0.6,
         goalPeeks: 0,
-        targetLabel: 'ui',
+        targetLabel: 'ik',
       },
       true,
       'AUTO_PROG',
@@ -142,7 +181,7 @@ describe('EmbeddedTutorEngine', () => {
         distractorPullPx: 65,
         radialNormPct: 0.7,
         goalPeeks: 0,
-        targetLabel: 'ui',
+        targetLabel: 'ik',
       },
       true,
       'AUTO_PROG',
@@ -196,6 +235,33 @@ describe('EmbeddedTutorEngine', () => {
     expect(warm2.stageChanged).toBe('RETURNED_UP');
     expect(warm2.nextStage).toBe(3);
     expect(warm2.voiceEmotion).toBe('PROUD_CELEBRATE');
-    expect(warm2.dutchCoachLine).toContain('terug naar stap 3');
+
+    const politePlan = tutor.planNextReadingVariation(3, 'op');
+    expect(politePlan.distractorCount).toBe(2);
+    expect(politePlan.targetCount).toBe(1);
+    expect(politePlan.politeFirstLetterScaffold).toBe(true);
+
+    const bridgeSpeech = tutor.buildPoliteFirstLetterSpeech('op', 3);
+    expect(bridgeSpeech).toContain('Daan');
+    expect(bridgeSpeech).toContain('o');
+    expect(bridgeSpeech).toContain('op');
+  });
+
+  it('scales distractors (2..4) and schedules Dual-Target (2x) challenges when confident', () => {
+    const tutor = new EmbeddedTutorEngine();
+    tutor.resetForLearner('Sem');
+
+    const initialPlan = tutor.planNextReadingVariation(3, 'ik');
+    expect(initialPlan.distractorCount).toBe(2);
+    expect(initialPlan.targetCount).toBe(1);
+
+    tutor.stageHitStreak = 3;
+    const plans = [
+      tutor.planNextReadingVariation(3, 'in'),
+      tutor.planNextReadingVariation(3, 'is'),
+      tutor.planNextReadingVariation(3, 'zo'),
+    ];
+    expect(plans.some((p) => p.targetCount === 2)).toBe(true);
+    expect(plans.some((p) => p.distractorCount === 4)).toBe(true);
   });
 });

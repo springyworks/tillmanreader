@@ -16,15 +16,28 @@
   <!-- FULL-VIEWPORT TRANSPARENT OVERLAY FOR GUI-ID SHANNON DI, EYE-PROXY GAZE & DOODLING -->
   <canvas id="guiDoodleOverlay"></canvas>
 
-  <!-- KID-CLEAN TOP BAR: PREV, VOICE, FULLSCREEN, STAGE BADGE & NEXT (ZERO DEV CLUTTER!) -->
+  <!-- KID-CLEAN TOP BAR: TOP-LEFT DUAL ARROWS (◀ ▶ ALWAYS PRESENT), STAGE BADGE & RIGHT AUDIO/FULLSCREEN -->
   <header id="topHeader" data-gui-id="GUI_TOP_HEADER" data-gui-label="Top Kid Navigation Header" class="shrink-0 bg-slate-950 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between gap-2 z-30">
-    <div class="flex items-center gap-2">
-      <button id="btnPrevLevel" data-gui-id="GUI_NAV_PREV" data-gui-label="Hero Prev Level" class="hero-nav-btn" title="Previous Stage (Shortcut: [ or PageUp)">
-        <span>◀</span><span>PREV</span>
+    <div id="topLeftNavArrows" data-gui-id="GUI_TOP_LEFT_ARROWS" data-gui-label="Top-Left Safety Step-Back &amp; Forward Arrows" class="flex items-center gap-1.5 shrink-0">
+      <button id="btnPrevLevel" data-gui-id="GUI_NAV_PREV" data-gui-label="Safety Step-Back Arrow (Top-Left)" class="hero-nav-btn" title="Stapje terug / Veilige terug-knop (Shortcut: [ of PageUp)">
+        <span>◀</span><span>TERUG</span>
       </button>
+      <button id="btnNextLevel" data-gui-id="GUI_NAV_NEXT" data-gui-label="Step-Forward Arrow (Top-Left)" class="hero-nav-btn next-hero" title="Stapje vooruit (Shortcut: ] of PageDown)">
+        <span>VOORUIT</span><span>▶</span>
+      </button>
+    </div>
 
+    <div class="flex flex-col min-w-0 flex-1 overflow-hidden px-2" style="text-align:center;">
+      <div class="flex items-center justify-center gap-1.5 w-full min-w-0 overflow-hidden">
+        <span class="text-xs font-bold uppercase tracking-wider text-amber-300 mono shrink-0">🚀 TILLMANN</span>
+        <span id="envelopePhasePill" data-gui-id="GUI_ENVELOPE_PHASE_PILL" data-gui-label="Goal Throttle &amp; Phase Status Pill" class="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-xs font-bold mono truncate">STEP 3/5 • 🎯 SCHERM-BASIS (0/3)</span>
+      </div>
+      <div id="activeStageBadge" data-gui-id="GUI_STAGE_BADGE" data-gui-label="Current Stage Indicator" class="text-xs font-bold mono text-cyan-300 truncate w-full mt-0.5">Phase 3/5 • Tillmann Hit-Test Baseline (0/3)</div>
+    </div>
+
+    <div id="topRightActions" class="flex items-center gap-1.5 shrink-0">
       <!-- GIANT TOP AUDIO TOGGLE (AUTO-UNLOCKS ON FIRST ARENA TOUCH FOR KIDS!) -->
-      <button id="btnHeroAudio" data-gui-id="GUI_HERO_AUDIO" data-gui-label="Master Dutch Voice &amp; Funny Sound Engine Toggle" class="hero-audio-btn audio-on" title="Nederlandse Stem &amp; Klankgrappen Synthesizer (Start automatisch bij eerste aanraking!)">
+      <button id="btnHeroAudio" data-gui-id="GUI_HERO_AUDIO" data-gui-label="Master Dutch Voice &amp; Funny Sound Engine Toggle" class="hero-audio-btn audio-on" title="Nederlandse Stem &amp; Bach-Rhodes Cadeautjes (Start automatisch bij eerste aanraking!)">
         <span id="heroAudioIcon">🔊</span>
         <span id="heroAudioText">STEM: KLAAR!</span>
       </button>
@@ -35,18 +48,6 @@
         <span id="fsText">FULL</span>
       </button>
     </div>
-
-    <div class="flex flex-col items-center min-w-0 px-2">
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-bold uppercase tracking-wider text-amber-300 mono">🚀 TILLMANN READER</span>
-        <span id="envelopePhasePill" data-gui-id="GUI_ENVELOPE_PHASE_PILL" data-gui-label="Goal Throttle &amp; Phase Status Pill" class="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-xs font-bold mono">STEP 5/5 • 👁️ BASELINE CHECK (0/5 unfaded)</span>
-      </div>
-      <div id="activeStageBadge" data-gui-id="GUI_STAGE_BADGE" data-gui-label="Current Stage Indicator" class="text-xs font-bold mono text-cyan-300 truncate mt-0.5">Phase 5/5 • Reading Stage 1/6 (Pre-Attentive Pop-Out)</div>
-    </div>
-
-    <button id="btnNextLevel" data-gui-id="GUI_NAV_NEXT" data-gui-label="Hero Next Level" class="hero-nav-btn next-hero" title="Next Stage (Shortcut: ] or PageDown)">
-      <span>NEXT</span><span>▶</span>
-    </button>
   </header>
 
   <!-- LIVE AUTO-SAVE JSON INSPECTOR & ONE-CLICK CLIPBOARD MODAL -->
@@ -227,8 +228,13 @@
           </label>
           <label class="flex items-center gap-1 text-slate-300">
             <span>Tempo:<b id="lblEmotionRate" class="text-cyan-300 ml-0.5">96%</b></span>
-            <input id="rngEmotionRate" data-gui-id="GUI_EMOTION_RATE" type="range" min="80" max="115" value="96" style="width: 68px; accent-color: #22d3ee;" />
+            <input id="rngEmotionRate" data-gui-id="GUI_EMOTION_RATE" type="range" min="80" max="115" value="96" style="width: 64px; accent-color: #22d3ee;" />
           </label>
+          <label class="flex items-center gap-1 text-slate-300">
+            <span>Rhodes↔Koor:<b id="lblRhodesMorph" class="text-amber-300 ml-0.5">52%</b></span>
+            <input id="rngRhodesMorph" data-gui-id="GUI_RHODES_VOICE_MORPH" type="range" min="0" max="100" value="52" style="width: 64px; accent-color: #fbbf24;" />
+          </label>
+          <button id="btnPreviewBachGloria" data-gui-id="GUI_PREVIEW_BACH_GLORIA" type="button" class="ergo-sub-btn border-amber-400 text-amber-200">🎼 Bach</button>
         </div>
       </div>
 

@@ -93,6 +93,11 @@ export function renderHumanTutorModal(app: LabApp): void {
   if (lblRate) lblRate.textContent = `${ratePct}%`;
   const rngRate = maybeById('rngEmotionRate', HTMLInputElement);
   if (rngRate) rngRate.value = String(ratePct);
+  const morphPct = Math.round(app.voiceEngine.bachGloria.rhodesToVoiceMorph * 100);
+  const lblMorph = maybeById('lblRhodesMorph');
+  if (lblMorph) lblMorph.textContent = `${morphPct}%`;
+  const rngMorph = maybeById('rngRhodesMorph', HTMLInputElement);
+  if (rngMorph) rngMorph.value = String(morphPct);
   for (const btn of document.querySelectorAll<HTMLButtonElement>('.emo-preview-btn')) {
     btn.classList.toggle('active', btn.dataset.emo === app.voiceEngine.lastEmotionPlayed);
   }
@@ -416,6 +421,38 @@ export function bindHumanTutorAndGuiFeedback(app: LabApp): void {
     app.voiceEngine.emotionControls.speakingRateScale = Number((val / 100).toFixed(2));
     const lbl = maybeById('lblEmotionRate');
     if (lbl) lbl.textContent = `${val}%`;
+  });
+
+  maybeById('rngRhodesMorph', HTMLInputElement)?.addEventListener('input', (e) => {
+    const val = Number((e.currentTarget as HTMLInputElement).value);
+    app.voiceEngine.bachGloria.rhodesToVoiceMorph = Number((val / 100).toFixed(2));
+    const lbl = maybeById('lblRhodesMorph');
+    if (lbl) lbl.textContent = `${val}%`;
+  });
+
+  onClick('btnPreviewBachGloria', () => {
+    app.voiceEngine.enabled = true;
+    maybeById('btnHeroAudio')?.classList.add('audio-on');
+    const iconEl = maybeById('heroAudioIcon');
+    if (iconEl) iconEl.textContent = '🔊';
+    const txtEl = maybeById('heroAudioText');
+    if (txtEl) txtEl.textContent = 'STEM & FX: AAN';
+
+    const barIdx = app.voiceEngine.playBachGloriaPresent(0);
+    const morphPct = Math.round(app.voiceEngine.bachGloria.rhodesToVoiceMorph * 100);
+    app.tutor.logExternalEvent(
+      'VOICE_PRAISE',
+      currentLevelLabel(app),
+      `J.S. Bach Gloria (BWV 232) cadeau #${barIdx + 1}/8 beluisterd (Rhodes↔Koor=${morphPct}%).`,
+      null,
+      `bar=${barIdx + 1}/8 • morph=${morphPct}%`,
+    );
+    app.hud.showToast(
+      `🎼 BACH GLORIA #${barIdx + 1}/8`,
+      `BWV 232 (D-groot) • Fender-Rhodes ↔ Koor morph: ${morphPct}%`,
+      'border-amber-400',
+    );
+    renderHumanTutorModal(app);
   });
 
   // Global Shortcut: Ctrl + Alt + G -> Capture GUI_ID under cursor + accumulative comment -> Clipboard!

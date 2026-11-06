@@ -36,8 +36,8 @@
     padding: 0 8px !important;
   }
 }
-/* PHONE / SMALL-TOUCH LAYOUT: icon-only big buttons that always fit (PREV, VOICE, FULL ... NEXT),
-       no sideways scrolling, developer export buttons tucked away, arena gets the room. */
+/* PHONE / SMALL-TOUCH LAYOUT: BOTH arrows (◀ ▶) ALWAYS side-by-side at top-left,
+   VOICE & FULL on top-right, zero sideways scrolling, arena gets maximum room. */
 @media (max-width: 767px), (max-height: 500px) {
   #topHeader {
     overflow: visible !important;
@@ -45,14 +45,22 @@
     padding: max(4px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) 4px
       max(8px, env(safe-area-inset-left, 0px)) !important;
   }
+  #topLeftNavArrows,
+  #topRightActions {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    flex-shrink: 0 !important;
+  }
   #topHeader > .flex-col {
     display: none !important;
   }
   #topHeader .hero-nav-btn,
   #topHeader .hero-audio-btn {
+    display: inline-flex !important;
     min-height: 46px !important;
-    min-width: 56px;
-    padding: 4px 14px !important;
+    min-width: 54px;
+    padding: 4px 12px !important;
     font-size: 20px !important;
     justify-content: center;
   }
@@ -62,12 +70,10 @@
   #fsText {
     display: none !important;
   }
-  #btnNextLevel {
-    min-width: 76px !important;
-  }
   #btnPrevLevel,
   #btnNextLevel {
-    font-size: 24px !important;
+    min-width: 58px !important;
+    font-size: 23px !important;
   }
   #btnTopSavedJson,
   #btnStandaloneExport,
